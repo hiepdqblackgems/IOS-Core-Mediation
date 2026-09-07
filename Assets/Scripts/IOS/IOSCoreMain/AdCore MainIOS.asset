@@ -9,6 +9,6 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9a77c0f98ee5c4dc0bef1b82f9f377de, type: 3}
+  m_Script: {fileID: 11500000, guid: 703c4adb7f5b7464a937355172833475, type: 3}
   m_Name: AdCore MainIOS
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
