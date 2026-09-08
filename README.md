@@ -70,6 +70,7 @@ The framework binary is larger than GitHub's normal file limit, so this reposito
 - Firebase config key for this CoreMain should be `adcore_main_ios`.
 - `NativeAdBridge.mm` imports the KMP framework with `#import <Shared/Shared.h>`.
 - C# calls into native through `IOSNativeAdBridge.cs` using `DllImport("__Internal")`.
+- Native functions that return C strings allocate them on the native side. C# must import those returns as `IntPtr`, read them with `Marshal.PtrToStringAnsi`, and release them with `AdsMultiplatform_FreeCString`; do not import native-owned strings as `string`.
 
 ## Xcode and Dependency Notes
 - The package postprocess uses Unity `PlayerSettings.iOS.targetOSVersionString`, falling back to `15.6`.

@@ -162,8 +162,10 @@ namespace BG_Library.NET.IOSSDK
 		private static extern int AdsMultiplatform_IsPopupNativeAdDisplayable(string instanceId);
 
 		[DllImport("__Internal")]
-		[return: MarshalAs(UnmanagedType.LPStr)]
-		private static extern string AdsMultiplatform_PopupNativeAdStateFor(string instanceId);
+		private static extern System.IntPtr AdsMultiplatform_PopupNativeAdStateFor(string instanceId);
+
+		[DllImport("__Internal")]
+		private static extern void AdsMultiplatform_FreeCString(System.IntPtr value);
 
 		[DllImport("__Internal")]
 		private static extern int AdsMultiplatform_CreateInterstitial(string instanceId, string configJson);
@@ -616,7 +618,21 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_PopupNativeAdStateFor(safeInstanceId) ?? "NotLoaded";
+			System.IntPtr statePtr = System.IntPtr.Zero;
+			try
+			{
+				statePtr = AdsMultiplatform_PopupNativeAdStateFor(safeInstanceId);
+				if (statePtr == System.IntPtr.Zero)
+					return "NotLoaded";
+
+				string state = Marshal.PtrToStringAnsi(statePtr);
+				return string.IsNullOrEmpty(state) ? "NotLoaded" : state;
+			}
+			finally
+			{
+				if (statePtr != System.IntPtr.Zero)
+					AdsMultiplatform_FreeCString(statePtr);
+			}
 #else
 			return "NotLoaded";
 #endif

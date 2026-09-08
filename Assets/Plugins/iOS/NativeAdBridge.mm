@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import <Shared/Shared.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 extern void UnitySendMessage(const char *obj, const char *method, const char *msg);
@@ -25,6 +26,22 @@ static NSString *AdsMultiplatformString(const char *value) {
 
 static NSString *AdsMultiplatformStateName(SharedNativeAdState *state) {
     return state == nil ? @"" : state.name;
+}
+
+static char *AdsMultiplatformCopyCString(NSString *value, const char *fallback) {
+    const char *source = value.UTF8String;
+    if (source == NULL) {
+        source = fallback == NULL ? "" : fallback;
+    }
+
+    size_t length = strlen(source);
+    char *copy = (char *)malloc(length + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    memcpy(copy, source, length + 1);
+    return copy;
 }
 
 static NSString *AdsMultiplatformPopupInstanceId(NSString *instanceId) {
@@ -542,6 +559,12 @@ extern "C" {
         return result ? 1 : 0;
     }
 
+    void AdsMultiplatform_FreeCString(const char *value) {
+        if (value != NULL) {
+            free((void *)value);
+        }
+    }
+
     const char *AdsMultiplatform_PopupNativeAdStateFor(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         __block NSString *state = @"NotLoaded";
@@ -550,11 +573,7 @@ extern "C" {
             state = AdsMultiplatformPopupState(sdk, nativeInstanceId);
         });
 
-        static char stateBuffer[64];
-        const char *utf8State = state.UTF8String != NULL ? state.UTF8String : "NotLoaded";
-        strncpy(stateBuffer, utf8State, sizeof(stateBuffer) - 1);
-        stateBuffer[sizeof(stateBuffer) - 1] = '\0';
-        return stateBuffer;
+        return AdsMultiplatformCopyCString(state, "NotLoaded");
     }
 
     void AdsMultiplatform_ShowNativeAd(const char *adUnitId) {
