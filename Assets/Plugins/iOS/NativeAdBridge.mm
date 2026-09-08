@@ -3,6 +3,8 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <Shared/Shared.h>
+#include <math.h>
+#include <string.h>
 
 extern void UnitySendMessage(const char *obj, const char *method, const char *msg);
 
@@ -10,6 +12,7 @@ extern "C" void UnityPause(int pause) __attribute__((weak_import));
 
 static const char *AdsMultiplatformCallbackObject = "AdsMultiplatformCallbacks";
 static const char *AdsMultiplatformCallbackMethod = "OnNativeAdEvent";
+static NSString *const AdsMultiplatformDefaultPopupInstanceId = @"popup_native_default";
 
 static void AdsMultiplatformSendEvent(NSString *instanceId, NSString *stateName) {
     NSString *payload = [NSString stringWithFormat:@"%@|%@", instanceId ?: @"", stateName ?: @""];
@@ -22,6 +25,113 @@ static NSString *AdsMultiplatformString(const char *value) {
 
 static NSString *AdsMultiplatformStateName(SharedNativeAdState *state) {
     return state == nil ? @"" : state.name;
+}
+
+static NSString *AdsMultiplatformPopupInstanceId(NSString *instanceId) {
+    return instanceId.length == 0 ? AdsMultiplatformDefaultPopupInstanceId : instanceId;
+}
+
+static NSMutableSet<NSString *> *AdsMultiplatformShowingPopupInstances(void) {
+    static NSMutableSet<NSString *> *instances;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instances = [NSMutableSet set];
+    });
+    return instances;
+}
+
+static void AdsMultiplatformMarkPopupShowing(NSString *instanceId) {
+    [AdsMultiplatformShowingPopupInstances() addObject:AdsMultiplatformPopupInstanceId(instanceId)];
+}
+
+static void AdsMultiplatformClearPopupShowing(NSString *instanceId) {
+    [AdsMultiplatformShowingPopupInstances() removeObject:AdsMultiplatformPopupInstanceId(instanceId)];
+}
+
+static BOOL AdsMultiplatformPopupBoolSelector(SharedIosPopupNativeAdSdk *sdk, const char *selectorName, NSString *instanceId) {
+    SEL selector = sel_registerName(selectorName);
+    if (sdk == nil || ![sdk respondsToSelector:selector]) {
+        return NO;
+    }
+    return ((BOOL (*)(id, SEL, NSString *))objc_msgSend)(sdk, selector, AdsMultiplatformPopupInstanceId(instanceId));
+}
+
+static NSString *AdsMultiplatformPopupStringSelector(SharedIosPopupNativeAdSdk *sdk, const char *selectorName, NSString *instanceId) {
+    SEL selector = sel_registerName(selectorName);
+    if (sdk == nil || ![sdk respondsToSelector:selector]) {
+        return nil;
+    }
+
+    id value = ((id (*)(id, SEL, NSString *))objc_msgSend)(sdk, selector, AdsMultiplatformPopupInstanceId(instanceId));
+    if ([value isKindOfClass:NSString.class]) {
+        return (NSString *)value;
+    }
+    SEL nameSelector = sel_registerName("name");
+    if (value != nil && [value respondsToSelector:nameSelector]) {
+        id name = ((id (*)(id, SEL))objc_msgSend)(value, nameSelector);
+        if ([name isKindOfClass:NSString.class]) {
+            return (NSString *)name;
+        }
+    }
+    return nil;
+}
+
+static NSString *AdsMultiplatformPopupState(SharedIosPopupNativeAdSdk *sdk, NSString *instanceId) {
+    NSString *state = AdsMultiplatformPopupStringSelector(sdk, "stateForAlias:", instanceId);
+    if (state.length > 0) {
+        return state;
+    }
+    if (AdsMultiplatformPopupBoolSelector(sdk, "isDisplayableAlias:", instanceId)) {
+        return @"Displayable";
+    }
+    if (AdsMultiplatformPopupBoolSelector(sdk, "isReadyAlias:", instanceId)) {
+        return @"Loaded";
+    }
+    return @"NotLoaded";
+}
+
+static BOOL AdsMultiplatformIsValidPopupLayout(float xDp, float yDp, float adWidthDp, float adHeightDp) {
+    return isfinite(xDp) &&
+           isfinite(yDp) &&
+           isfinite(adWidthDp) &&
+           isfinite(adHeightDp) &&
+           adWidthDp > 0.0f &&
+           adHeightDp > 0.0f;
+}
+
+static NSString *AdsMultiplatformPopupShowBlockReason(
+    SharedIosPopupNativeAdSdk *sdk,
+    NSString *instanceId,
+    UIViewController *presenter
+) {
+    NSString *safeInstanceId = AdsMultiplatformPopupInstanceId(instanceId);
+    if (presenter == nil) {
+        return @"missing_presenter";
+    }
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+        return @"application_not_active";
+    }
+    if (presenter.view.window == nil) {
+        return @"presenter_view_not_attached";
+    }
+    if (presenter.transitionCoordinator != nil || presenter.isBeingPresented || presenter.isBeingDismissed) {
+        return @"presenter_transitioning";
+    }
+
+    NSMutableSet<NSString *> *showingInstances = AdsMultiplatformShowingPopupInstances();
+    if (showingInstances.count > 0 && ![showingInstances containsObject:safeInstanceId]) {
+        return @"another_popup_showing";
+    }
+
+    CGRect bounds = presenter.view.bounds;
+    if (!isfinite(bounds.size.width) || !isfinite(bounds.size.height) || bounds.size.width <= 0.0 || bounds.size.height <= 0.0) {
+        return @"invalid_presenter_bounds";
+    }
+
+    if (!AdsMultiplatformPopupBoolSelector(sdk, "isDisplayableAlias:", safeInstanceId)) {
+        return [NSString stringWithFormat:@"not_displayable:%@", AdsMultiplatformPopupState(sdk, safeInstanceId)];
+    }
+    return nil;
 }
 
 static UIWindow *AdsMultiplatformActiveWindow(void) {
@@ -253,26 +363,51 @@ extern "C" {
         int autoClose,
         int enableCtrOverlay
     ) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         NSString *unitIds = AdsMultiplatformString(adUnitIdsCsv);
         NSString *nativeLayoutName = AdsMultiplatformString(layoutName);
         dispatch_async(dispatch_get_main_queue(), ^{
+            UIViewController *presenter = AdsMultiplatformPresenter();
+            if (presenter == nil) {
+                NSLog(@"AdsMultiplatform popup load skipped instance=%@ reason=missing_presenter", nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            if (!AdsMultiplatformIsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp)) {
+                NSLog(@"AdsMultiplatform popup load skipped instance=%@ reason=invalid_layout", nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk loadWithConfigRootViewController:AdsMultiplatformPresenter()
-                                            alias:nativeInstanceId
-                                     adUnitIdsCsv:unitIds
-                                       layoutName:nativeLayoutName
-                                  timeShowSeconds:timeShowSeconds
-                                timeReloadSeconds:timeReloadSeconds
-                                              xDp:xDp
-                                              yDp:yDp
-                                        adWidthDp:adWidthDp
-                                       adHeightDp:adHeightDp
-                                        autoClose:autoClose != 0
-                                 enableCtrOverlay:enableCtrOverlay != 0
-                                   onStateChanged:^(SharedNativeAdState *state) {
-                AdsMultiplatformSendEvent(nativeInstanceId, AdsMultiplatformStateName(state));
-            }];
+            @try {
+                [sdk loadWithConfigRootViewController:presenter
+                                                alias:nativeInstanceId
+                                         adUnitIdsCsv:unitIds
+                                           layoutName:nativeLayoutName
+                                      timeShowSeconds:timeShowSeconds
+                                    timeReloadSeconds:timeReloadSeconds
+                                                  xDp:xDp
+                                                  yDp:yDp
+                                            adWidthDp:adWidthDp
+                                           adHeightDp:adHeightDp
+                                            autoClose:autoClose != 0
+                                     enableCtrOverlay:enableCtrOverlay != 0
+                                       onStateChanged:^(SharedNativeAdState *state) {
+                    NSString *stateName = AdsMultiplatformStateName(state);
+                    if ([stateName isEqualToString:@"Failed"] || [stateName isEqualToString:@"onClosed"]) {
+                        AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                    }
+                    AdsMultiplatformSendEvent(nativeInstanceId, stateName);
+                    if ([stateName isEqualToString:@"Loaded"] &&
+                        AdsMultiplatformPopupBoolSelector(sdk, "isDisplayableAlias:", nativeInstanceId)) {
+                        AdsMultiplatformSendEvent(nativeInstanceId, @"Displayable");
+                    }
+                }];
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup load exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
     }
 
@@ -283,55 +418,143 @@ extern "C" {
         float adWidthDp,
         float adHeightDp
     ) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformIsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp)) {
+                NSLog(@"AdsMultiplatform popup placement skipped instance=%@ reason=invalid_layout", nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk updatePlacementAlias:nativeInstanceId
-                                  xDp:xDp
-                                  yDp:yDp
-                            adWidthDp:adWidthDp
-                           adHeightDp:adHeightDp];
+            @try {
+                [sdk updatePlacementAlias:nativeInstanceId
+                                      xDp:xDp
+                                      yDp:yDp
+                                adWidthDp:adWidthDp
+                               adHeightDp:adHeightDp];
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup placement exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
     }
 
     void AdsMultiplatform_ShowPopupNativeAd(const char *instanceId) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         dispatch_async(dispatch_get_main_queue(), ^{
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk showRootViewController:AdsMultiplatformPresenter() alias:nativeInstanceId];
+            UIViewController *presenter = AdsMultiplatformPresenter();
+            NSString *blockReason = AdsMultiplatformPopupShowBlockReason(sdk, nativeInstanceId, presenter);
+            if (blockReason.length > 0) {
+                NSLog(@"AdsMultiplatform popup show skipped instance=%@ reason=%@", nativeInstanceId, blockReason);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
+            @try {
+                AdsMultiplatformMarkPopupShowing(nativeInstanceId);
+                [sdk showRootViewController:presenter alias:nativeInstanceId];
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup show exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+            }
         });
     }
 
     void AdsMultiplatform_ClosePopupNativeAd(const char *instanceId) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         dispatch_async(dispatch_get_main_queue(), ^{
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk closeAlias:nativeInstanceId];
+            @try {
+                [sdk closeAlias:nativeInstanceId];
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup close exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+            }
         });
     }
 
     void AdsMultiplatform_HidePopupNativeAd(const char *instanceId) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         dispatch_async(dispatch_get_main_queue(), ^{
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk hideAlias:nativeInstanceId];
+            @try {
+                [sdk hideAlias:nativeInstanceId];
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup hide exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+            }
         });
     }
 
     void AdsMultiplatform_StopPopupNativeAd(const char *instanceId) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         dispatch_async(dispatch_get_main_queue(), ^{
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk stopAlias:nativeInstanceId];
+            @try {
+                [sdk stopAlias:nativeInstanceId];
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup stop exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+            }
         });
     }
 
     void AdsMultiplatform_DestroyPopupNativeAd(const char *instanceId) {
-        NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         dispatch_async(dispatch_get_main_queue(), ^{
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
-            [sdk destroyAlias:nativeInstanceId];
+            @try {
+                [sdk destroyAlias:nativeInstanceId];
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+            } @catch (NSException *exception) {
+                NSLog(@"AdsMultiplatform popup destroy exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+            }
         });
+    }
+
+    int AdsMultiplatform_IsPopupNativeAdReady(const char *instanceId) {
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
+            result = AdsMultiplatformPopupBoolSelector(sdk, "isReadyAlias:", nativeInstanceId);
+        });
+        return result ? 1 : 0;
+    }
+
+    int AdsMultiplatform_IsPopupNativeAdDisplayable(const char *instanceId) {
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
+            result = AdsMultiplatformPopupBoolSelector(sdk, "isDisplayableAlias:", nativeInstanceId);
+        });
+        return result ? 1 : 0;
+    }
+
+    const char *AdsMultiplatform_PopupNativeAdStateFor(const char *instanceId) {
+        NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        __block NSString *state = @"NotLoaded";
+        AdsMultiplatformRunOnMainSync(^{
+            SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
+            state = AdsMultiplatformPopupState(sdk, nativeInstanceId);
+        });
+
+        static char stateBuffer[64];
+        const char *utf8State = state.UTF8String != NULL ? state.UTF8String : "NotLoaded";
+        strncpy(stateBuffer, utf8State, sizeof(stateBuffer) - 1);
+        stateBuffer[sizeof(stateBuffer) - 1] = '\0';
+        return stateBuffer;
     }
 
     void AdsMultiplatform_ShowNativeAd(const char *adUnitId) {

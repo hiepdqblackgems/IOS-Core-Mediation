@@ -72,7 +72,7 @@ The framework binary is larger than GitHub's normal file limit, so this reposito
 - C# calls into native through `IOSNativeAdBridge.cs` using `DllImport("__Internal")`.
 
 ## Xcode and Dependency Notes
-- The package postprocess sets iOS deployment target to `18.5`.
+- The package postprocess uses Unity `PlayerSettings.iOS.targetOSVersionString`, falling back to `15.6`.
 - The package postprocess adds a shell phase for dynamic pod frameworks used by current mediation dependencies:
   - `AppLovinSDK/AppLovinSDK.framework`
   - `AdjustSignature/AdjustSigSdk.framework`

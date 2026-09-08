@@ -8,7 +8,7 @@ namespace BG_Library.NET.AdCore.MainIOS
 {
     public static class IOSKMPPostprocess
     {
-        private const string IosDeploymentTarget = "18.5";
+        private const string FallbackIosDeploymentTarget = "15.6";
         private const string SupportedPlatforms = "iphoneos iphonesimulator";
         private const string EmbedDynamicPodsPhaseName = "BG Embed iOS Dynamic Pod Frameworks";
         private const string CopyComposeResourcesPhaseName = "BG Copy KMP Compose Resources";
@@ -46,15 +46,16 @@ namespace BG_Library.NET.AdCore.MainIOS
             var project = new PBXProject();
             project.ReadFromFile(projectPath);
             bool isSimulatorExport = IsSimulatorExport(projectPath);
+            string deploymentTarget = ResolveIosDeploymentTarget();
 
-            ApplyIosOnlyBuildSettings(project, project.GetUnityMainTargetGuid());
-            ApplyIosOnlyBuildSettings(project, project.GetUnityFrameworkTargetGuid());
+            ApplyIosOnlyBuildSettings(project, project.GetUnityMainTargetGuid(), deploymentTarget);
+            ApplyIosOnlyBuildSettings(project, project.GetUnityFrameworkTargetGuid(), deploymentTarget);
             AddDynamicPodFrameworkEmbedPhase(project, projectPath, project.GetUnityMainTargetGuid());
             AddKmpComposeResourcesPhase(project, projectPath, project.GetUnityMainTargetGuid());
 
             string gameAssemblyTarget = project.TargetGuidByName("GameAssembly");
             if (!string.IsNullOrEmpty(gameAssemblyTarget))
-                ApplyIosOnlyBuildSettings(project, gameAssemblyTarget);
+                ApplyIosOnlyBuildSettings(project, gameAssemblyTarget, deploymentTarget);
 
             project.WriteToFile(projectPath);
             RemoveAllLoadLinkerFlag(projectPath);
@@ -66,15 +67,23 @@ namespace BG_Library.NET.AdCore.MainIOS
             }
         }
 
-        private static void ApplyIosOnlyBuildSettings(PBXProject project, string targetGuid)
+        private static void ApplyIosOnlyBuildSettings(PBXProject project, string targetGuid, string deploymentTarget)
         {
             if (string.IsNullOrEmpty(targetGuid))
                 return;
 
-            project.SetBuildProperty(targetGuid, "IPHONEOS_DEPLOYMENT_TARGET", IosDeploymentTarget);
+            project.SetBuildProperty(targetGuid, "IPHONEOS_DEPLOYMENT_TARGET", deploymentTarget);
             project.SetBuildProperty(targetGuid, "SUPPORTED_PLATFORMS", SupportedPlatforms);
             project.SetBuildProperty(targetGuid, "SUPPORTS_MACCATALYST", "NO");
             project.SetBuildProperty(targetGuid, "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD", "NO");
+        }
+
+        private static string ResolveIosDeploymentTarget()
+        {
+            string configured = PlayerSettings.iOS.targetOSVersionString;
+            return string.IsNullOrWhiteSpace(configured)
+                ? FallbackIosDeploymentTarget
+                : configured.Trim();
         }
 
         private static void AddDynamicPodFrameworkEmbedPhase(PBXProject project, string projectPath, string mainTargetGuid)

@@ -9,6 +9,7 @@ namespace BG_Library.NET.IOSSDK
 		public const string Idle = "Idle";
 		public const string Loading = "Loading";
 		public const string Loaded = "Loaded";
+		public const string Displayable = "Displayable";
 		public const string Failed = "Failed";
 		public const string Shown = "Shown";
 		public const string OnClosed = "onClosed";
@@ -153,6 +154,16 @@ namespace BG_Library.NET.IOSSDK
 
 		[DllImport("__Internal")]
 		private static extern void AdsMultiplatform_DestroyPopupNativeAd(string instanceId);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_IsPopupNativeAdReady(string instanceId);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_IsPopupNativeAdDisplayable(string instanceId);
+
+		[DllImport("__Internal")]
+		[return: MarshalAs(UnmanagedType.LPStr)]
+		private static extern string AdsMultiplatform_PopupNativeAdStateFor(string instanceId);
 
 		[DllImport("__Internal")]
 		private static extern int AdsMultiplatform_CreateInterstitial(string instanceId, string configJson);
@@ -465,6 +476,13 @@ namespace BG_Library.NET.IOSSDK
 			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestAdUnitId);
 			string safeLayoutName = SafeLayoutName(layoutName, DefaultPopupLayoutName);
 
+			if (!IsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp))
+			{
+				UnityEngine.Debug.LogWarning("[IOSNativeAdBridge] LoadPopup skipped. Invalid layout instance=" + safeInstanceId);
+				DispatchSyntheticEvent(safeInstanceId, IOSNativeAdCallbackNames.Failed);
+				return;
+			}
+
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_LoadPopupNativeAdWithConfig(
 				safeInstanceId,
@@ -492,6 +510,13 @@ namespace BG_Library.NET.IOSSDK
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
 
+			if (!IsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp))
+			{
+				UnityEngine.Debug.LogWarning("[IOSNativeAdBridge] UpdatePopupPlacement skipped. Invalid layout instance=" + safeInstanceId);
+				DispatchSyntheticEvent(safeInstanceId, IOSNativeAdCallbackNames.Failed);
+				return;
+			}
+
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_UpdatePopupNativeAdPlacement(
 				safeInstanceId,
@@ -509,6 +534,11 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
+			if (!IsPopupDisplayable(safeInstanceId))
+			{
+				NotifyPopupShowSkipped(safeInstanceId, "state=" + PopupStateFor(safeInstanceId));
+				return;
+			}
 			AdsMultiplatform_ShowPopupNativeAd(safeInstanceId);
 #else
 			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowPopup is only executed in an iOS player build. instance=" + safeInstanceId);
@@ -559,6 +589,46 @@ namespace BG_Library.NET.IOSSDK
 #endif
 		}
 
+		public static bool IsPopupReady(string instanceId)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_IsPopupNativeAdReady(safeInstanceId) != 0;
+#else
+			return false;
+#endif
+		}
+
+		public static bool IsPopupDisplayable(string instanceId)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_IsPopupNativeAdDisplayable(safeInstanceId) != 0;
+#else
+			return false;
+#endif
+		}
+
+		public static string PopupStateFor(string instanceId)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_PopupNativeAdStateFor(safeInstanceId) ?? "NotLoaded";
+#else
+			return "NotLoaded";
+#endif
+		}
+
+		public static void NotifyPopupShowSkipped(string instanceId, string reason)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			UnityEngine.Debug.LogWarning("[IOSNativeAdBridge] ShowPopup skipped. instance=" + safeInstanceId + " " + reason);
+			DispatchSyntheticEvent(safeInstanceId, IOSNativeAdCallbackNames.OnClosed);
+		}
+
 		internal static void DispatchNativeEvent(string payload)
 		{
 			int separator = string.IsNullOrEmpty(payload) ? -1 : payload.IndexOf('|');
@@ -577,6 +647,11 @@ namespace BG_Library.NET.IOSSDK
 			}
 
 			target.HandleNativeCallback(stateName);
+		}
+
+		private static void DispatchSyntheticEvent(string instanceId, string stateName)
+		{
+			DispatchNativeEvent(SafeAlias(instanceId, DefaultPopupInstanceId) + "|" + stateName);
 		}
 
 		public static string SafeInstanceId(string instanceId)
@@ -658,6 +733,21 @@ namespace BG_Library.NET.IOSSDK
 				return "\"\"";
 
 			return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+		}
+
+		private static bool IsValidPopupLayout(float xDp, float yDp, float adWidthDp, float adHeightDp)
+		{
+			return IsFinite(xDp) &&
+			       IsFinite(yDp) &&
+			       IsFinite(adWidthDp) &&
+			       IsFinite(adHeightDp) &&
+			       adWidthDp > 0f &&
+			       adHeightDp > 0f;
+		}
+
+		private static bool IsFinite(float value)
+		{
+			return !float.IsNaN(value) && !float.IsInfinity(value);
 		}
 
 		private static int NonNegative(int value) => value < 0 ? 0 : value;

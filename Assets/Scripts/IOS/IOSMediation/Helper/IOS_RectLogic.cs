@@ -23,6 +23,7 @@ namespace BG_Library.NET.Mediation.IOS
 		private bool isAttached;
 		private bool hasFirstLoadResolved;
 		private bool hasBridgeInstance;
+		private bool isPopupDisplayable;
 		private bool popupLayoutUpdated;
 		private float popupX;
 		private float popupY;
@@ -55,6 +56,7 @@ namespace BG_Library.NET.Mediation.IOS
 				}
 
 				ListenToAdEvents();
+				isPopupDisplayable = false;
 
 				if (ShouldBlockPostInitPopupReload())
 				{
@@ -111,6 +113,12 @@ namespace BG_Library.NET.Mediation.IOS
 
 				if (core.Info is IOS_PUInfo)
 				{
+					if (!IOSNativeAdBridge.IsPopupDisplayable(instanceId))
+					{
+						IOSNativeAdBridge.NotifyPopupShowSkipped(instanceId, $"state={IOSNativeAdBridge.PopupStateFor(instanceId)}");
+						return;
+					}
+
 					IOSNativeAdBridge.ShowPopup(instanceId);
 					return;
 				}
@@ -174,6 +182,7 @@ namespace BG_Library.NET.Mediation.IOS
 				isAttached = false;
 				hasFirstLoadResolved = false;
 				hasBridgeInstance = false;
+				isPopupDisplayable = false;
 			}
 		}
 
@@ -221,6 +230,41 @@ namespace BG_Library.NET.Mediation.IOS
 				return false;
 			}
 
+			if (!IsFinitePopupLayout(popupX, popupY, popupLayoutWidthDp, popupLayoutHeightDp))
+			{
+				reason = TrackingReason.InvalidLayoutSize;
+				detail = $"Popup layout has invalid numeric value. x={popupX:0.###}, y={popupY:0.###}, w={popupLayoutWidthDp:0.###}, h={popupLayoutHeightDp:0.###}";
+				return false;
+			}
+
+			if (!HasValidScreen(out var screenWidthDp, out var screenHeightDp))
+			{
+				reason = TrackingReason.InvalidLayoutSize;
+				detail = "Popup screen size invalid.";
+				return false;
+			}
+
+			if (!IsPopupPlacementVisible(screenWidthDp, screenHeightDp))
+			{
+				reason = TrackingReason.InvalidLayoutSize;
+				detail = $"Popup placement outside viewport. x={popupX:0.###}, y={popupY:0.###}, w={popupLayoutWidthDp:0.###}, h={popupLayoutHeightDp:0.###}, screen=({screenWidthDp:0.###},{screenHeightDp:0.###})";
+				return false;
+			}
+
+			if (!hasBridgeInstance)
+			{
+				reason = TrackingReason.NotReady;
+				detail = "Popup bridge instance not loaded.";
+				return false;
+			}
+
+			if (!isPopupDisplayable && !IOSNativeAdBridge.IsPopupDisplayable(instanceId))
+			{
+				reason = TrackingReason.NotReady;
+				detail = $"Popup not displayable. state={IOSNativeAdBridge.PopupStateFor(instanceId)}";
+				return false;
+			}
+
 			return true;
 		}
 
@@ -253,18 +297,34 @@ namespace BG_Library.NET.Mediation.IOS
 
 						case IOSNativeAdCallbackNames.Loaded:
 							hasFirstLoadResolved = true;
+							if (core.Info is IOS_PUInfo)
+							{
+								core.Message(() => $"IOS popup loaded. state={IOSNativeAdBridge.PopupStateFor(instanceId)}");
+								break;
+							}
+							core.OnAdLoadedEvent(string.Empty, BG_ConstValue.mediation_ios);
+							break;
+
+						case IOSNativeAdCallbackNames.Displayable:
+							hasFirstLoadResolved = true;
+							isPopupDisplayable = true;
 							core.OnAdLoadedEvent(string.Empty, BG_ConstValue.mediation_ios);
 							break;
 
 						case IOSNativeAdCallbackNames.Failed:
+							isPopupDisplayable = false;
 							HandleLoadFailed();
+							if (core.IsShowing)
+								core.Hide();
 							break;
 
 						case IOSNativeAdCallbackNames.Shown:
+							isPopupDisplayable = false;
 							core.Message(() => "IOS native shown");
 							break;
 
 						case IOSNativeAdCallbackNames.OnClosed:
+							isPopupDisplayable = false;
 							if (core.IsShowing)
 								core.Hide();
 							break;
@@ -367,6 +427,47 @@ namespace BG_Library.NET.Mediation.IOS
 			}
 
 			return IOSNativeAdBridge.DefaultPopupLayoutName;
+		}
+
+		private static bool IsFinitePopupLayout(float xDp, float yDp, float wDp, float hDp)
+		{
+			return IsFinite(xDp) &&
+			       IsFinite(yDp) &&
+			       IsFinite(wDp) &&
+			       IsFinite(hDp);
+		}
+
+		private static bool HasValidScreen(out float screenWidthDp, out float screenHeightDp)
+		{
+			screenWidthDp = 0f;
+			screenHeightDp = 0f;
+
+			var density = Master.GetScreenDensity();
+			if (!IsFinite(density) || density <= 0f)
+				return false;
+
+			if (Screen.width <= 0 || Screen.height <= 0)
+				return false;
+
+			screenWidthDp = Screen.width / density;
+			screenHeightDp = Screen.height / density;
+			return IsFinite(screenWidthDp) &&
+			       IsFinite(screenHeightDp) &&
+			       screenWidthDp > 0f &&
+			       screenHeightDp > 0f;
+		}
+
+		private bool IsPopupPlacementVisible(float screenWidthDp, float screenHeightDp)
+		{
+			return popupX + popupLayoutWidthDp > 0f &&
+			       popupY + popupLayoutHeightDp > 0f &&
+			       popupX < screenWidthDp &&
+			       popupY < screenHeightDp;
+		}
+
+		private static bool IsFinite(float value)
+		{
+			return !float.IsNaN(value) && !float.IsInfinity(value);
 		}
 
 		private static void ResolvePopupPlacement(float x, float y, float w, float h, out float resolvedX, out float resolvedY)
