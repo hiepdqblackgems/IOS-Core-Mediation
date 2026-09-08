@@ -37,10 +37,12 @@ namespace BG_Library.NET.IOSSDK
 		public const string FullscreenNav03Right = "fs_single_nav_03_right";
 		public const string DefaultBannerInstanceId = "banner_native_default";
 		public const string DefaultPopupInstanceId = "popup_native_default";
+		public const string DefaultInterstitialInstanceId = "interstitial";
 		public const string DefaultBannerLayoutName = "bn_single_transparent_01";
 		public const string DefaultPopupLayoutName = "mrec_single_manual_01";
 
 		private const string IosTestAdUnitId = "ca-app-pub-3940256099942544/3986624511";
+		private const string IosTestInterstitialAdUnitId = "ca-app-pub-3940256099942544/4411468910";
 		private const int DefaultBannerCountdownSeconds = 5;
 		private const int DefaultBannerCollapseSeconds = 5;
 
@@ -151,6 +153,25 @@ namespace BG_Library.NET.IOSSDK
 
 		[DllImport("__Internal")]
 		private static extern void AdsMultiplatform_DestroyPopupNativeAd(string instanceId);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_CreateInterstitial(string instanceId, string configJson);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_LoadInterstitialWithConfig(
+			string instanceId,
+			string adUnitIdsCsv,
+			int preloadBufferSize,
+			int autoReload);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_ShowInterstitial(string instanceId, string optionsJson);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_DestroyInterstitial(string instanceId);
+
+		[DllImport("__Internal")]
+		private static extern int AdsMultiplatform_IsInterstitialReady(string instanceId);
 #endif
 
 		public static void Register(string instanceId, IOSNativeAdCallbackTarget target)
@@ -268,6 +289,81 @@ namespace BG_Library.NET.IOSSDK
 			AdsMultiplatform_DestroyFullscreenNativeAd(safeInstanceId);
 #else
 			UnityEngine.Debug.Log("[IOSNativeAdBridge] DestroyFullscreen is only executed in an iOS player build. instance=" + safeInstanceId);
+#endif
+		}
+
+		public static bool CreateInterstitial(
+			string instanceId = DefaultInterstitialInstanceId,
+			string adUnitIdsCsv = null,
+			int preloadBufferSize = 1,
+			bool autoReload = true)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
+			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestInterstitialAdUnitId);
+			string configJson = InterstitialConfigJson(safeAdUnitIds, preloadBufferSize, autoReload);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_CreateInterstitial(safeInstanceId, configJson) != 0;
+#else
+			UnityEngine.Debug.Log("[IOSNativeAdBridge] CreateInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			return false;
+#endif
+		}
+
+		public static bool LoadInterstitial(
+			string instanceId = DefaultInterstitialInstanceId,
+			string adUnitIdsCsv = null,
+			int preloadBufferSize = 1,
+			bool autoReload = true)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
+			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestInterstitialAdUnitId);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_LoadInterstitialWithConfig(
+				safeInstanceId,
+				safeAdUnitIds,
+				preloadBufferSize < 1 ? 1 : preloadBufferSize,
+				autoReload ? 1 : 0) != 0;
+#else
+			UnityEngine.Debug.Log("[IOSNativeAdBridge] LoadInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			return false;
+#endif
+		}
+
+		public static bool ShowInterstitial(string instanceId = DefaultInterstitialInstanceId, bool immersiveMode = true)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
+			string optionsJson = InterstitialOptionsJson(immersiveMode);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_ShowInterstitial(safeInstanceId, optionsJson) != 0;
+#else
+			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			return false;
+#endif
+		}
+
+		public static bool DestroyInterstitial(string instanceId = DefaultInterstitialInstanceId)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_DestroyInterstitial(safeInstanceId) != 0;
+#else
+			UnityEngine.Debug.Log("[IOSNativeAdBridge] DestroyInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			return false;
+#endif
+		}
+
+		public static bool IsInterstitialReady(string instanceId = DefaultInterstitialInstanceId)
+		{
+			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
+
+#if UNITY_IOS && !UNITY_EDITOR
+			return AdsMultiplatform_IsInterstitialReady(safeInstanceId) != 0;
+#else
+			return false;
 #endif
 		}
 
@@ -522,6 +618,46 @@ namespace BG_Library.NET.IOSSDK
 				return fallbackLayoutName;
 
 			return layoutName.Trim().ToLowerInvariant();
+		}
+
+		private static string InterstitialConfigJson(string adUnitIdsCsv, int preloadBufferSize, bool autoReload)
+		{
+			string[] adUnitIds = SafeCsv(adUnitIdsCsv, IosTestInterstitialAdUnitId).Split(',');
+			string idsJson = "";
+
+			for (int i = 0; i < adUnitIds.Length; i++)
+			{
+				string id = adUnitIds[i]?.Trim();
+				if (string.IsNullOrEmpty(id))
+					continue;
+
+				if (idsJson.Length > 0)
+					idsJson += ",";
+
+				idsJson += JsonString(id);
+			}
+
+			if (idsJson.Length == 0)
+				idsJson = JsonString(IosTestInterstitialAdUnitId);
+
+			return "{\"ids\":[" + idsJson + "],\"autoReload\":" +
+			       (autoReload ? "true" : "false") +
+			       ",\"preloadBufferSize\":" +
+			       (preloadBufferSize < 1 ? 1 : preloadBufferSize) +
+			       "}";
+		}
+
+		private static string InterstitialOptionsJson(bool immersiveMode)
+		{
+			return "{\"immersiveMode\":" + (immersiveMode ? "true" : "false") + "}";
+		}
+
+		private static string JsonString(string value)
+		{
+			if (string.IsNullOrEmpty(value))
+				return "\"\"";
+
+			return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 		}
 
 		private static int NonNegative(int value) => value < 0 ? 0 : value;

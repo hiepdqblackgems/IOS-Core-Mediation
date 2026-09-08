@@ -26,17 +26,31 @@ static NSString *AdsMultiplatformStateName(SharedNativeAdState *state) {
 
 static UIWindow *AdsMultiplatformActiveWindow(void) {
     UIWindow *candidate = nil;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) {
-            continue;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]]) {
+                continue;
+            }
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                if (candidate == nil) {
+                    candidate = window;
+                }
+                if (window.isKeyWindow) {
+                    return window;
+                }
+            }
         }
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-            if (candidate == nil) {
-                candidate = window;
-            }
-            if (window.isKeyWindow) {
-                return window;
-            }
+    }
+
+    if (UIApplication.sharedApplication.keyWindow != nil) {
+        return UIApplication.sharedApplication.keyWindow;
+    }
+    for (UIWindow *window in UIApplication.sharedApplication.windows) {
+        if (candidate == nil) {
+            candidate = window;
+        }
+        if (window.isKeyWindow) {
+            return window;
         }
     }
     return candidate;
@@ -49,6 +63,14 @@ static UIViewController *AdsMultiplatformPresenter(void) {
         presenter = presenter.presentedViewController;
     }
     return presenter;
+}
+
+static void AdsMultiplatformRunOnMainSync(dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+        return;
+    }
+    dispatch_sync(dispatch_get_main_queue(), block);
 }
 
 static void AdsMultiplatformPrepareModal(UIViewController *controller) {
@@ -436,6 +458,86 @@ extern "C" {
             SharedIosFullscreenNativeAdSdk *sdk = [[SharedIosFullscreenNativeAdSdk alloc] init];
             [sdk destroyAlias:nativeInstanceId];
         });
+    }
+
+    int AdsMultiplatform_CreateInterstitial(const char *instanceId, const char *configJson) {
+        NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        NSString *nativeConfigJson = configJson == nullptr ? @"" : [NSString stringWithUTF8String:configJson];
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+            result = [bridge createInterstitialAlias:nativeInstanceId configJson:nativeConfigJson];
+        });
+        return result ? 1 : 0;
+    }
+
+    int AdsMultiplatform_LoadInterstitialWithConfig(
+        const char *instanceId,
+        const char *adUnitIdsCsv,
+        int preloadBufferSize,
+        int autoReload
+    ) {
+        NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        NSString *unitIds = adUnitIdsCsv == nullptr ? @"" : [NSString stringWithUTF8String:adUnitIdsCsv];
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedIosInterstitialAdSdk *sdk = [[SharedIosInterstitialAdSdk alloc] init];
+            [sdk loadWithConfigRootViewController:AdsMultiplatformPresenter()
+                                           alias:nativeInstanceId
+                                    adUnitIdsCsv:unitIds
+                               preloadBufferSize:preloadBufferSize < 1 ? 1 : preloadBufferSize
+                                      autoReload:autoReload != 0
+                                  onStateChanged:^(SharedNativeAdState *state) {
+                AdsMultiplatformSendEvent(nativeInstanceId, AdsMultiplatformStateName(state));
+            }];
+            result = YES;
+        });
+        return result ? 1 : 0;
+    }
+
+    int AdsMultiplatform_LoadInterstitial(const char *instanceId, int bufferSize) {
+        NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+            result = [bridge loadInterstitialRootViewController:AdsMultiplatformPresenter()
+                                                          alias:nativeInstanceId
+                                                     bufferSize:bufferSize < 1 ? 1 : bufferSize];
+        });
+        return result ? 1 : 0;
+    }
+
+    int AdsMultiplatform_ShowInterstitial(const char *instanceId, const char *optionsJson) {
+        NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        NSString *nativeOptionsJson = optionsJson == nullptr ? nil : [NSString stringWithUTF8String:optionsJson];
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+            result = [bridge showInterstitialRootViewController:AdsMultiplatformPresenter()
+                                                          alias:nativeInstanceId
+                                                    optionsJson:nativeOptionsJson];
+        });
+        return result ? 1 : 0;
+    }
+
+    int AdsMultiplatform_DestroyInterstitial(const char *instanceId) {
+        NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+            result = [bridge destroyAlias:nativeInstanceId];
+        });
+        return result ? 1 : 0;
+    }
+
+    int AdsMultiplatform_IsInterstitialReady(const char *instanceId) {
+        NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        __block BOOL result = NO;
+        AdsMultiplatformRunOnMainSync(^{
+            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+            result = [bridge isReadyAlias:nativeInstanceId];
+        });
+        return result ? 1 : 0;
     }
 
     void loadNativeAdIOS(const char *adUnitId) {

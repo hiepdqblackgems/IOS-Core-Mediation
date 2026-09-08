@@ -19,13 +19,14 @@ namespace BG_Library.NET.Mediation.IOS
 		}
 
 		public LayoutGroupConfig LayoutGroup => layoutGroup;
+		protected virtual string TestAdUnitId => TestNativeAdUnitId;
 
 		public override string Id
 		{
 			get
 			{
 				if (NetConfigsSO.Ins.Admob_TestId)
-					return TestNativeAdUnitId;
+					return TestAdUnitId;
 
 				return id;
 			}
@@ -46,6 +47,8 @@ namespace BG_Library.NET.Mediation.IOS
 
 	public class IOS_FAInfo : IOS_FSInfo
 	{
+		private const string TestInterstitialAdUnitId = "ca-app-pub-3940256099942544/4411468910";
+
 		private readonly string groupName;
 		private readonly int maxShowCount;
 		private readonly bool disablePostInitReload;
@@ -60,6 +63,7 @@ namespace BG_Library.NET.Mediation.IOS
 
 		public string GroupName => groupName;
 		public int MaxShowCount => maxShowCount;
+		protected override string TestAdUnitId => TestInterstitialAdUnitId;
 		public override bool DisablePostInitReload => disablePostInitReload;
 		public override bool IsRewarded => false;
 	}

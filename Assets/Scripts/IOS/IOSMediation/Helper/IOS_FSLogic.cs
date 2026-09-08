@@ -18,16 +18,16 @@ namespace BG_Library.NET.Mediation.IOS
 		{
 			this.core = core;
 			idKey = this.core.Id;
-			ad = new IOSFSNativeInstance(new[] { idKey }, core.LayoutGroup);
+			ad = CreateAdInstance();
 
 			NetFlowDebugSystem.Log(Layer.group, Module.ios_api_fs, $"Create.Instance {core.GroupName}",
-				() => $"adtype={core.Adtype} id={idKey} layoutNames={FormatLayoutNames(core.LayoutGroup)}");
+				() => $"adtype={core.Adtype} id={idKey} layoutNames={FormatLayoutNames(core.LayoutGroup)} instance={AdInstanceName()}");
 		}
 
 		public void RequestAd()
 		{
 			using (NetFlowDebugSystem.Flow(Layer.group, Module.ios_api_fs, $"SDK.Load {core.GroupName}",
-				       () => $"adtype={core.Adtype} id={idKey} call=IOSFSNativeInstance.LoadAd()"))
+				       () => $"adtype={core.Adtype} id={idKey} call={AdInstanceName()}.LoadAd()"))
 			{
 				ad?.LoadAd();
 			}
@@ -38,7 +38,7 @@ namespace BG_Library.NET.Mediation.IOS
 		public void Show()
 		{
 			using (NetFlowDebugSystem.Flow(Layer.group, Module.ios_api_fs, $"SDK.Show {core.GroupName}",
-				       () => $"adtype={core.Adtype} id={idKey} call=IOSFSNativeInstance.ShowAd()"))
+				       () => $"adtype={core.Adtype} id={idKey} call={AdInstanceName()}.ShowAd()"))
 			{
 				try
 				{
@@ -54,7 +54,7 @@ namespace BG_Library.NET.Mediation.IOS
 		public void DestroyAd()
 		{
 			using (NetFlowDebugSystem.Flow(Layer.group, Module.ios_api_fs, $"SDK.Destroy {core.GroupName}",
-				       () => $"adtype={core.Adtype} id={idKey} call=IOSFSNativeInstance.DestroyAd()"))
+				       () => $"adtype={core.Adtype} id={idKey} call={AdInstanceName()}.DestroyAd()"))
 			{
 				ad?.DestroyAd();
 				ad = null;
@@ -182,8 +182,36 @@ namespace BG_Library.NET.Mediation.IOS
 					};
 				}
 
+				if (ad is IOSInterstitialInstance interstitialAd)
+				{
+					interstitialAd.OnAdShowFailedEvent += (adInfo, errorCode, errorMessage) =>
+					{
+						UnityMainThreadDispatcher.EnqueueCallback(() =>
+						{
+							using (NetFlowDebugSystem.FlowNew(Layer.group, Module.ios_api_fs, $"CB.ShowFailed {core.GroupName}",
+								       () => $"adtype={core.Adtype} id={idKey} err={errorMessage}"))
+							{
+								core.OnAdDisplayFailedEvent(SafeInfo(adInfo), errorMessage ?? "IOS ShowFailed (null)", errorCode: errorCode);
+							}
+						});
+					};
+				}
+
 				NetFlowDebugSystem.Log(Layer.group, Module.fs_group, $"Attach.OK {core.GroupName}", () => $"id={idKey}");
 			}
+		}
+
+		private IFSInstance CreateAdInstance()
+		{
+			if (core.Info != null && core.Info.IsRewarded)
+				return new IOSFSNativeInstance(new[] { idKey }, core.LayoutGroup);
+
+			return new IOSInterstitialInstance(new[] { idKey });
+		}
+
+		private string AdInstanceName()
+		{
+			return ad == null ? "null" : ad.GetType().Name;
 		}
 
 		private static string FormatLayoutNames(LayoutGroupConfig layoutGroup)

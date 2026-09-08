@@ -6,9 +6,9 @@
 #import <Foundation/NSString.h>
 #import <Foundation/NSValue.h>
 
-@class SharedAdsConsoleAssetVisibilityConfig, SharedAdsConsoleClickAssetConfig, SharedAdsConsoleEnvironment, SharedAdsConsoleFeature, SharedAdsConsoleOrientation, SharedAdsConsolePopupPlacement, SharedAdsConsolePopupPlacementCompanion, SharedAdsConsoleSections, SharedAdsConsoleStatus, SharedAdsConsoleUiState, SharedAdsConsoleViewport, SharedBannerCollapseCountdownStyle, SharedBannerNativeAdComposeCallbacks, SharedBannerNativeAdComposeState, SharedBannerNativeAdConfig, SharedBannerNativeAdError, SharedBannerNativeAdInfo, SharedBannerNativeAdLayoutCatalog, SharedBannerNativeAdReloadPolicy, SharedBannerNativeAdRequest, SharedBannerNativeAdShowOptions, SharedBannerNativeAdSizing, SharedFullscreenLayoutCatalog, SharedFullscreenNativeAdCloseStyle, SharedFullscreenNativeAdComposeCallbacks, SharedFullscreenNativeAdComposeLayouts, SharedFullscreenNativeAdComposeState, SharedFullscreenNativeAdConfig, SharedFullscreenNativeAdControlPhase, SharedFullscreenNativeAdControlState, SharedFullscreenNativeAdError, SharedFullscreenNativeAdInfo, SharedFullscreenNativeAdMode, SharedFullscreenNativeAdModeCompanion, SharedFullscreenNativeAdRegistry, SharedFullscreenNativeAdRequest, SharedFullscreenNativeAdShowOptions, SharedFullscreenNativeAdShowOptionsCompanion, SharedKotlinArray<T>, SharedKotlinEnum<E>, SharedKotlinEnumCompanion, SharedNativeAdLayoutNames, SharedNativeAdLoadResult, SharedNativeAdLoadResultCompanion, SharedNativeAdShowOptions, SharedNativeAdState, SharedNativeAssetVisibilityOptions, SharedNativeClickAssetOptions, SharedPopupNativeAdComposeCallbacks, SharedPopupNativeAdComposeState, SharedPopupNativeAdConfig, SharedPopupNativeAdError, SharedPopupNativeAdInfo, SharedPopupNativeAdLayoutCatalog, SharedPopupNativeAdRequest, UIViewController;
+@class SharedAdsConsoleAssetVisibilityConfig, SharedAdsConsoleClickAssetConfig, SharedAdsConsoleEnvironment, SharedAdsConsoleFeature, SharedAdsConsoleOrientation, SharedAdsConsolePopupPlacement, SharedAdsConsolePopupPlacementCompanion, SharedAdsConsoleSections, SharedAdsConsoleStatus, SharedAdsConsoleUiState, SharedAdsConsoleViewport, SharedBannerCollapseCountdownStyle, SharedBannerNativeAdComposeCallbacks, SharedBannerNativeAdComposeState, SharedBannerNativeAdConfig, SharedBannerNativeAdError, SharedBannerNativeAdInfo, SharedBannerNativeAdLayoutCatalog, SharedBannerNativeAdReloadPolicy, SharedBannerNativeAdRequest, SharedBannerNativeAdShowOptions, SharedBannerNativeAdSizing, SharedFullscreenLayoutCatalog, SharedFullscreenNativeAdCloseStyle, SharedFullscreenNativeAdComposeCallbacks, SharedFullscreenNativeAdComposeLayouts, SharedFullscreenNativeAdComposeState, SharedFullscreenNativeAdConfig, SharedFullscreenNativeAdControlPhase, SharedFullscreenNativeAdControlState, SharedFullscreenNativeAdError, SharedFullscreenNativeAdInfo, SharedFullscreenNativeAdMode, SharedFullscreenNativeAdModeCompanion, SharedFullscreenNativeAdRegistry, SharedFullscreenNativeAdRequest, SharedFullscreenNativeAdShowOptions, SharedFullscreenNativeAdShowOptionsCompanion, SharedInterstitialAdConfig, SharedInterstitialAdInfo, SharedInterstitialAdPaidInfo, SharedInterstitialAdRegistry, SharedInterstitialShowOptions, SharedKotlinArray<T>, SharedKotlinEnum<E>, SharedKotlinEnumCompanion, SharedNativeAdLayoutNames, SharedNativeAdLoadResult, SharedNativeAdLoadResultCompanion, SharedNativeAdShowOptions, SharedNativeAdState, SharedNativeAssetVisibilityOptions, SharedNativeClickAssetOptions, SharedPopupNativeAdComposeCallbacks, SharedPopupNativeAdComposeState, SharedPopupNativeAdConfig, SharedPopupNativeAdError, SharedPopupNativeAdInfo, SharedPopupNativeAdLayoutCatalog, SharedPopupNativeAdRequest, UIViewController;
 
-@protocol SharedFullscreenNativeAdCallback, SharedKotlinComparable, SharedKotlinIterator, SharedPlatform;
+@protocol SharedFullscreenNativeAdCallback, SharedInterstitialAdCallback, SharedKotlinComparable, SharedKotlinIterator, SharedPlatform;
 
 NS_ASSUME_NONNULL_BEGIN
 #pragma clang diagnostic push
@@ -175,15 +175,30 @@ __attribute__((swift_name("NativeAdIosBridge")))
 @interface SharedNativeAdIosBridge : SharedBase
 - (instancetype)init __attribute__((swift_name("init()"))) __attribute__((objc_designated_initializer));
 + (instancetype)new __attribute__((availability(swift, unavailable, message="use object initializers instead")));
+- (BOOL)createType:(NSString *)type alias:(NSString *)alias configJson:(NSString *)configJson __attribute__((swift_name("create(type:alias:configJson:)")));
+- (BOOL)createInterstitialAlias:(NSString *)alias configJson:(NSString *)configJson __attribute__((swift_name("createInterstitial(alias:configJson:)")));
+- (void)createInterstitialAlias:(NSString *)alias adUnitIdsCsv:(NSString *)adUnitIdsCsv preloadBufferSize:(int32_t)preloadBufferSize autoReload:(BOOL)autoReload __attribute__((swift_name("createInterstitial(alias:adUnitIdsCsv:preloadBufferSize:autoReload:)")));
+- (BOOL)destroyAlias:(NSString *)alias __attribute__((swift_name("destroy(alias:)")));
+- (BOOL)destroyInterstitialAlias:(NSString *)alias __attribute__((swift_name("destroyInterstitial(alias:)")));
 - (UIViewController *)fullscreenViewControllerInstanceId:(NSString *)instanceId options:(SharedFullscreenNativeAdShowOptions *)options fallbackAdUnitId:(NSString *)fallbackAdUnitId __attribute__((swift_name("fullscreenViewController(instanceId:options:fallbackAdUnitId:)")));
 - (UIViewController *)fullscreenViewControllerInstanceId:(NSString *)instanceId layoutName:(NSString *)layoutName durationSeconds:(double)durationSeconds fallbackAdUnitId:(NSString *)fallbackAdUnitId __attribute__((swift_name("fullscreenViewController(instanceId:layoutName:durationSeconds:fallbackAdUnitId:)")));
 - (UIViewController *)fullscreenViewControllerForUnityInstanceId:(NSString *)instanceId layoutName:(NSString *)layoutName durationSeconds:(double)durationSeconds fallbackAdUnitId:(NSString *)fallbackAdUnitId onClosed:(void (^)(void))onClosed __attribute__((swift_name("fullscreenViewControllerForUnity(instanceId:layoutName:durationSeconds:fallbackAdUnitId:onClosed:)")));
 - (UIViewController *)fullscreenViewControllerForUnityWithOptionsInstanceId:(NSString *)instanceId mode:(NSString *)mode layoutNamesCsv:(NSString *)layoutNamesCsv durationSeconds:(double)durationSeconds durationsSecondsCsv:(NSString *)durationsSecondsCsv orientation:(NSString *)orientation autoClose:(BOOL)autoClose pauseGameplay:(BOOL)pauseGameplay enableAdComeback:(BOOL)enableAdComeback showTCD:(BOOL)showTCD delaySeconds:(double)delaySeconds timeUpCSeconds:(int32_t)timeUpCSeconds fallbackAdUnitId:(NSString *)fallbackAdUnitId cta:(BOOL)cta headline:(BOOL)headline body:(BOOL)body description:(BOOL)description icon:(BOOL)icon advertiser:(BOOL)advertiser media:(BOOL)media mediaImage:(BOOL)mediaImage mediaVideo:(BOOL)mediaVideo onClosed:(void (^)(void))onClosed __attribute__((swift_name("fullscreenViewControllerForUnityWithOptions(instanceId:mode:layoutNamesCsv:durationSeconds:durationsSecondsCsv:orientation:autoClose:pauseGameplay:enableAdComeback:showTCD:delaySeconds:timeUpCSeconds:fallbackAdUnitId:cta:headline:body:description:icon:advertiser:media:mediaImage:mediaVideo:onClosed:)")));
 - (UIViewController *)fullscreenViewControllerWithAutoCloseInstanceId:(NSString *)instanceId layoutName:(NSString *)layoutName durationSeconds:(double)durationSeconds fallbackAdUnitId:(NSString *)fallbackAdUnitId autoClose:(BOOL)autoClose __attribute__((swift_name("fullscreenViewControllerWithAutoClose(instanceId:layoutName:durationSeconds:fallbackAdUnitId:autoClose:)")));
+- (BOOL)isInterstitialReadyAlias:(NSString *)alias __attribute__((swift_name("isInterstitialReady(alias:)")));
+- (BOOL)isReadyAlias:(NSString *)alias __attribute__((swift_name("isReady(alias:)")));
 - (void)loadAdUnitId:(NSString *)adUnitId rootViewController:(UIViewController *)rootViewController __attribute__((swift_name("load(adUnitId:rootViewController:)")));
 - (void)loadFullscreenInstanceId:(NSString *)instanceId adUnitIdsCsv:(NSString *)adUnitIdsCsv rootViewController:(UIViewController *)rootViewController __attribute__((swift_name("loadFullscreen(instanceId:adUnitIdsCsv:rootViewController:)")));
 - (void)loadFullscreenInstanceId:(NSString *)instanceId adUnitIdsCsv:(NSString *)adUnitIdsCsv rootViewController:(UIViewController *)rootViewController enableReloadAfterShow:(BOOL)enableReloadAfterShow onStateChanged:(void (^)(SharedNativeAdState *))onStateChanged __attribute__((swift_name("loadFullscreen(instanceId:adUnitIdsCsv:rootViewController:enableReloadAfterShow:onStateChanged:)")));
 - (void)loadFullscreenWithReloadInstanceId:(NSString *)instanceId adUnitIdsCsv:(NSString *)adUnitIdsCsv rootViewController:(UIViewController *)rootViewController enableReloadAfterShow:(BOOL)enableReloadAfterShow onStateChanged:(void (^)(SharedNativeAdState *))onStateChanged __attribute__((swift_name("loadFullscreenWithReload(instanceId:adUnitIdsCsv:rootViewController:enableReloadAfterShow:onStateChanged:)")));
+- (BOOL)loadInterstitialRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias __attribute__((swift_name("loadInterstitial(rootViewController:alias:)")));
+- (BOOL)loadInterstitialRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias bufferSize:(int32_t)bufferSize __attribute__((swift_name("loadInterstitial(rootViewController:alias:bufferSize:)")));
+- (BOOL)preloadAllRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias __attribute__((swift_name("preloadAll(rootViewController:alias:)")));
+- (BOOL)preloadOneRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias adUnitId:(NSString *)adUnitId __attribute__((swift_name("preloadOne(rootViewController:alias:adUnitId:)")));
+- (BOOL)setInterstitialCallbackAlias:(NSString *)alias callback:(id<SharedInterstitialAdCallback> _Nullable)callback __attribute__((swift_name("setInterstitialCallback(alias:callback:)")));
+- (BOOL)setInterstitialCallbackRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias callback:(id<SharedInterstitialAdCallback> _Nullable)callback __attribute__((swift_name("setInterstitialCallback(rootViewController:alias:callback:)")));
+- (BOOL)showInterstitialRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias __attribute__((swift_name("showInterstitial(rootViewController:alias:)")));
+- (BOOL)showInterstitialRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias optionsJson:(NSString * _Nullable)optionsJson __attribute__((swift_name("showInterstitial(rootViewController:alias:optionsJson:)")));
 - (UIViewController *)viewControllerAdUnitId:(NSString *)adUnitId __attribute__((swift_name("viewController(adUnitId:)")));
 @end
 
@@ -434,6 +449,8 @@ __attribute__((swift_name("BannerNativeAdSizing")))
 @property (readonly) float ExpandedHeightRatioPortrait __attribute__((swift_name("ExpandedHeightRatioPortrait")));
 @property (readonly) float HeightRatioLandscape __attribute__((swift_name("HeightRatioLandscape")));
 @property (readonly) float HeightRatioPortrait __attribute__((swift_name("HeightRatioPortrait")));
+@property (readonly) float MinExpandedHeightLandscapeDp __attribute__((swift_name("MinExpandedHeightLandscapeDp")));
+@property (readonly) float MinExpandedHeightPortraitDp __attribute__((swift_name("MinExpandedHeightPortraitDp")));
 @end
 
 __attribute__((objc_subclassing_restricted))
@@ -1092,6 +1109,125 @@ __attribute__((swift_name("FullscreenNativeAdComposeState")))
 @property (readonly) BOOL usesNativeAssetTouchHandling __attribute__((swift_name("usesNativeAssetTouchHandling")));
 @end
 
+__attribute__((swift_name("InterstitialAdCallback")))
+@protocol SharedInterstitialAdCallback
+@required
+- (void)onInterstitialClickedAd:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("onInterstitialClicked(ad:)")));
+- (void)onInterstitialClosedAd:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("onInterstitialClosed(ad:)")));
+- (void)onInterstitialDisplayable __attribute__((swift_name("onInterstitialDisplayable()")));
+- (void)onInterstitialDisplayedAd:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("onInterstitialDisplayed(ad:)")));
+- (void)onInterstitialFailedToLoadAdUnit:(NSString *)adUnit errorCode:(int32_t)errorCode error:(NSString *)error __attribute__((swift_name("onInterstitialFailedToLoad(adUnit:errorCode:error:)")));
+- (void)onInterstitialLoadedAd:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("onInterstitialLoaded(ad:)")));
+- (void)onInterstitialOpenedAd:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("onInterstitialOpened(ad:)")));
+- (void)onInterstitialPaidImpressionAd:(SharedInterstitialAdInfo *)ad paidInfo:(SharedInterstitialAdPaidInfo *)paidInfo __attribute__((swift_name("onInterstitialPaidImpression(ad:paidInfo:)")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("InterstitialAdConfig")))
+@interface SharedInterstitialAdConfig : SharedBase
+- (instancetype)initWithIds:(NSArray<NSString *> *)ids autoReload:(BOOL)autoReload preloadBufferSize:(int32_t)preloadBufferSize __attribute__((swift_name("init(ids:autoReload:preloadBufferSize:)"))) __attribute__((objc_designated_initializer));
+- (SharedInterstitialAdConfig *)doCopyIds:(NSArray<NSString *> *)ids autoReload:(BOOL)autoReload preloadBufferSize:(int32_t)preloadBufferSize __attribute__((swift_name("doCopy(ids:autoReload:preloadBufferSize:)")));
+- (BOOL)isEqual:(id _Nullable)other __attribute__((swift_name("isEqual(_:)")));
+- (NSUInteger)hash __attribute__((swift_name("hash()")));
+- (NSString *)description __attribute__((swift_name("description()")));
+@property (readonly) BOOL autoReload __attribute__((swift_name("autoReload")));
+@property (readonly) NSArray<NSString *> *ids __attribute__((swift_name("ids")));
+@property (readonly) int32_t preloadBufferSize __attribute__((swift_name("preloadBufferSize")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("InterstitialAdInfo")))
+@interface SharedInterstitialAdInfo : SharedBase
+- (instancetype)initWithAdUnitId:(NSString *)adUnitId mediationAdapter:(NSString *)mediationAdapter responseId:(NSString *)responseId adSource:(NSString * _Nullable)adSource __attribute__((swift_name("init(adUnitId:mediationAdapter:responseId:adSource:)"))) __attribute__((objc_designated_initializer));
+- (SharedInterstitialAdInfo *)doCopyAdUnitId:(NSString *)adUnitId mediationAdapter:(NSString *)mediationAdapter responseId:(NSString *)responseId adSource:(NSString * _Nullable)adSource __attribute__((swift_name("doCopy(adUnitId:mediationAdapter:responseId:adSource:)")));
+- (BOOL)isEqual:(id _Nullable)other __attribute__((swift_name("isEqual(_:)")));
+- (NSUInteger)hash __attribute__((swift_name("hash()")));
+- (NSString *)description __attribute__((swift_name("description()")));
+@property (readonly) NSString * _Nullable adSource __attribute__((swift_name("adSource")));
+@property (readonly) NSString *adUnitId __attribute__((swift_name("adUnitId")));
+@property (readonly) NSString *mediationAdapter __attribute__((swift_name("mediationAdapter")));
+@property (readonly) NSString *responseId __attribute__((swift_name("responseId")));
+@end
+
+__attribute__((swift_name("InterstitialAdLoader")))
+@protocol SharedInterstitialAdLoader
+@required
+- (void)configureAlias:(NSString *)alias config:(SharedInterstitialAdConfig *)config __attribute__((swift_name("configure(alias:config:)")));
+- (void)destroyAlias:(NSString *)alias __attribute__((swift_name("destroy(alias:)")));
+- (void)hideAlias:(NSString *)alias __attribute__((swift_name("hide(alias:)")));
+- (BOOL)isReadyAlias:(NSString *)alias __attribute__((swift_name("isReady(alias:)")));
+- (void)loadAlias:(NSString *)alias onResult:(void (^)(SharedNativeAdLoadResult *))onResult __attribute__((swift_name("load(alias:onResult:)")));
+- (void)loadAlias:(NSString *)alias bufferSize:(int32_t)bufferSize onResult:(void (^)(SharedNativeAdLoadResult *))onResult __attribute__((swift_name("load(alias:bufferSize:onResult:)")));
+- (void)setCallbackAlias:(NSString *)alias callback:(id<SharedInterstitialAdCallback> _Nullable)callback __attribute__((swift_name("setCallback(alias:callback:)")));
+- (BOOL)showAlias:(NSString *)alias options:(SharedInterstitialShowOptions *)options __attribute__((swift_name("show(alias:options:)")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("InterstitialAdPaidInfo")))
+@interface SharedInterstitialAdPaidInfo : SharedBase
+- (instancetype)initWithAdUnitId:(NSString *)adUnitId revenueMicros:(int64_t)revenueMicros currencyCode:(NSString *)currencyCode mediationAdapter:(NSString *)mediationAdapter adSource:(NSString * _Nullable)adSource responseId:(NSString *)responseId __attribute__((swift_name("init(adUnitId:revenueMicros:currencyCode:mediationAdapter:adSource:responseId:)"))) __attribute__((objc_designated_initializer));
+- (SharedInterstitialAdPaidInfo *)doCopyAdUnitId:(NSString *)adUnitId revenueMicros:(int64_t)revenueMicros currencyCode:(NSString *)currencyCode mediationAdapter:(NSString *)mediationAdapter adSource:(NSString * _Nullable)adSource responseId:(NSString *)responseId __attribute__((swift_name("doCopy(adUnitId:revenueMicros:currencyCode:mediationAdapter:adSource:responseId:)")));
+- (BOOL)isEqual:(id _Nullable)other __attribute__((swift_name("isEqual(_:)")));
+- (NSUInteger)hash __attribute__((swift_name("hash()")));
+- (NSString *)description __attribute__((swift_name("description()")));
+@property (readonly) NSString * _Nullable adSource __attribute__((swift_name("adSource")));
+@property (readonly) NSString *adUnitId __attribute__((swift_name("adUnitId")));
+@property (readonly) NSString *currencyCode __attribute__((swift_name("currencyCode")));
+@property (readonly) NSString *mediationAdapter __attribute__((swift_name("mediationAdapter")));
+@property (readonly) NSString *responseId __attribute__((swift_name("responseId")));
+@property (readonly) int64_t revenueMicros __attribute__((swift_name("revenueMicros")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("InterstitialAdRegistry")))
+@interface SharedInterstitialAdRegistry : SharedBase
++ (instancetype)alloc __attribute__((unavailable));
++ (instancetype)allocWithZone:(struct _NSZone *)zone __attribute__((unavailable));
++ (instancetype)interstitialAdRegistry __attribute__((swift_name("init()")));
+@property (class, readonly, getter=shared) SharedInterstitialAdRegistry *shared __attribute__((swift_name("shared")));
+- (SharedInterstitialAdConfig *)configForAlias:(NSString *)alias fallbackAdUnitId:(NSString *)fallbackAdUnitId __attribute__((swift_name("configFor(alias:fallbackAdUnitId:)")));
+- (void)createAlias:(NSString *)alias config:(SharedInterstitialAdConfig *)config __attribute__((swift_name("create(alias:config:)")));
+- (void)destroyAlias:(NSString *)alias __attribute__((swift_name("destroy(alias:)")));
+- (BOOL)isReadyAlias:(NSString *)alias __attribute__((swift_name("isReady(alias:)")));
+- (NSString * _Nullable)loadedAdUnitIdAlias:(NSString *)alias __attribute__((swift_name("loadedAdUnitId(alias:)")));
+- (void)notifyClickedAlias:(NSString *)alias ad:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("notifyClicked(alias:ad:)")));
+- (void)notifyClosedAlias:(NSString *)alias ad:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("notifyClosed(alias:ad:)")));
+- (void)notifyDisplayedAlias:(NSString *)alias ad:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("notifyDisplayed(alias:ad:)")));
+- (void)notifyFailedToLoadAlias:(NSString *)alias adUnit:(NSString *)adUnit errorCode:(int32_t)errorCode error:(NSString *)error __attribute__((swift_name("notifyFailedToLoad(alias:adUnit:errorCode:error:)")));
+- (void)notifyLoadedAlias:(NSString *)alias ad:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("notifyLoaded(alias:ad:)")));
+- (void)notifyLoadingAlias:(NSString *)alias __attribute__((swift_name("notifyLoading(alias:)")));
+- (void)notifyOpenedAlias:(NSString *)alias ad:(SharedInterstitialAdInfo *)ad __attribute__((swift_name("notifyOpened(alias:ad:)")));
+- (void)notifyPaidImpressionAlias:(NSString *)alias ad:(SharedInterstitialAdInfo *)ad paidInfo:(SharedInterstitialAdPaidInfo *)paidInfo __attribute__((swift_name("notifyPaidImpression(alias:ad:paidInfo:)")));
+- (void)setCallbackAlias:(NSString *)alias callback:(id<SharedInterstitialAdCallback> _Nullable)callback __attribute__((swift_name("setCallback(alias:callback:)")));
+- (SharedNativeAdState *)stateForAlias:(NSString *)alias __attribute__((swift_name("stateFor(alias:)")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("InterstitialShowOptions")))
+@interface SharedInterstitialShowOptions : SharedBase
+- (instancetype)initWithImmersiveMode:(BOOL)immersiveMode __attribute__((swift_name("init(immersiveMode:)"))) __attribute__((objc_designated_initializer));
+- (SharedInterstitialShowOptions *)doCopyImmersiveMode:(BOOL)immersiveMode __attribute__((swift_name("doCopy(immersiveMode:)")));
+- (BOOL)isEqual:(id _Nullable)other __attribute__((swift_name("isEqual(_:)")));
+- (NSUInteger)hash __attribute__((swift_name("hash()")));
+- (NSString *)description __attribute__((swift_name("description()")));
+@property (readonly) BOOL immersiveMode __attribute__((swift_name("immersiveMode")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("IosInterstitialAdSdk")))
+@interface SharedIosInterstitialAdSdk : SharedBase
+- (instancetype)init __attribute__((swift_name("init()"))) __attribute__((objc_designated_initializer));
++ (instancetype)new __attribute__((availability(swift, unavailable, message="use object initializers instead")));
+- (void)createAlias:(NSString *)alias adUnitIdsCsv:(NSString *)adUnitIdsCsv preloadBufferSize:(int32_t)preloadBufferSize autoReload:(BOOL)autoReload __attribute__((swift_name("create(alias:adUnitIdsCsv:preloadBufferSize:autoReload:)")));
+- (void)destroyAlias:(NSString *)alias __attribute__((swift_name("destroy(alias:)")));
+- (BOOL)isReadyAlias:(NSString *)alias __attribute__((swift_name("isReady(alias:)")));
+- (void)loadRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias __attribute__((swift_name("load(rootViewController:alias:)")));
+- (void)loadRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias bufferSize:(int32_t)bufferSize __attribute__((swift_name("load(rootViewController:alias:bufferSize:)")));
+- (void)loadWithConfigRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias adUnitIdsCsv:(NSString *)adUnitIdsCsv preloadBufferSize:(int32_t)preloadBufferSize autoReload:(BOOL)autoReload onStateChanged:(void (^)(SharedNativeAdState *))onStateChanged __attribute__((swift_name("loadWithConfig(rootViewController:alias:adUnitIdsCsv:preloadBufferSize:autoReload:onStateChanged:)")));
+- (void)setCallbackAlias:(NSString *)alias callback:(id<SharedInterstitialAdCallback> _Nullable)callback __attribute__((swift_name("setCallback(alias:callback:)")));
+- (BOOL)showRootViewController:(UIViewController *)rootViewController alias:(NSString *)alias __attribute__((swift_name("show(rootViewController:alias:)")));
+@end
+
 __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("IosPopupNativeAdSdk")))
 @interface SharedIosPopupNativeAdSdk : SharedBase
@@ -1177,6 +1313,8 @@ __attribute__((swift_name("PopupNativeAdLayoutCatalog")))
 + (instancetype)popupNativeAdLayoutCatalog __attribute__((swift_name("init()")));
 @property (class, readonly, getter=shared) SharedPopupNativeAdLayoutCatalog *shared __attribute__((swift_name("shared")));
 - (NSString *)normalizeLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("normalize(layoutName:)")));
+- (BOOL)usesAdChoicesViewLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("usesAdChoicesView(layoutName:)")));
+- (BOOL)usesMediaViewLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("usesMediaView(layoutName:)")));
 @property (readonly) NSArray<NSString *> *All __attribute__((swift_name("All")));
 @property (readonly) NSString *Default __attribute__((swift_name("Default")));
 @property (readonly) float MinHeightDp __attribute__((swift_name("MinHeightDp")));
@@ -1186,6 +1324,16 @@ __attribute__((swift_name("PopupNativeAdLayoutCatalog")))
 @property (readonly) NSString *MrecSingleManual03 __attribute__((swift_name("MrecSingleManual03")));
 @property (readonly) NSString *MrecSingleManual04 __attribute__((swift_name("MrecSingleManual04")));
 @property (readonly) NSString *MrecSingleManual05 __attribute__((swift_name("MrecSingleManual05")));
+@property (readonly) NSString *MrecSingleManual06 __attribute__((swift_name("MrecSingleManual06")));
+@property (readonly) NSString *MrecSingleManual07 __attribute__((swift_name("MrecSingleManual07")));
+@property (readonly) NSString *MrecSingleManual08 __attribute__((swift_name("MrecSingleManual08")));
+@property (readonly) NSString *MrecSingleManual09 __attribute__((swift_name("MrecSingleManual09")));
+@property (readonly) NSString *MrecSingleManual10 __attribute__((swift_name("MrecSingleManual10")));
+@property (readonly) NSString *MrecSingleManual11 __attribute__((swift_name("MrecSingleManual11")));
+@property (readonly) NSString *MrecSingleManual12 __attribute__((swift_name("MrecSingleManual12")));
+@property (readonly) NSString *MrecSingleManual13 __attribute__((swift_name("MrecSingleManual13")));
+@property (readonly) NSString *MrecSingleManual14 __attribute__((swift_name("MrecSingleManual14")));
+@property (readonly) NSString *MrecSingleManual15 __attribute__((swift_name("MrecSingleManual15")));
 @end
 
 __attribute__((swift_name("PopupNativeAdLoader")))
@@ -1264,6 +1412,12 @@ __attribute__((swift_name("BannerNativeAdContractsKt")))
 @end
 
 __attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("InterstitialAdContractsKt")))
+@interface SharedInterstitialAdContractsKt : SharedBase
+@property (class, readonly) NSString *DefaultInterstitialAdInstanceId __attribute__((swift_name("DefaultInterstitialAdInstanceId")));
+@end
+
+__attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("MainViewControllerKt")))
 @interface SharedMainViewControllerKt : SharedBase
 + (UIViewController *)MainViewController __attribute__((swift_name("MainViewController()")));
@@ -1286,6 +1440,12 @@ __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("Platform_iosKt")))
 @interface SharedPlatform_iosKt : SharedBase
 + (id<SharedPlatform>)getPlatform __attribute__((swift_name("getPlatform()")));
+@end
+
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("PlatformInterstitialAd_iosKt")))
+@interface SharedPlatformInterstitialAd_iosKt : SharedBase
++ (NSString *)defaultInterstitialAdUnitId __attribute__((swift_name("defaultInterstitialAdUnitId()")));
 @end
 
 __attribute__((objc_subclassing_restricted))
