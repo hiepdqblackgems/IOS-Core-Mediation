@@ -197,7 +197,8 @@ namespace BG_Library.NET.Mediation.IOS
 				popupLayoutUpdated = true;
 				popupLayoutWidthDp = w;
 				popupLayoutHeightDp = h;
-				ResolvePopupPlacement(xDp, yDp, w, h, out popupX, out popupY);
+				popupX = xDp;
+				popupY = yDp;
 
 				IOSNativeAdBridge.UpdatePopupPlacement(
 					instanceId,
@@ -468,32 +469,6 @@ namespace BG_Library.NET.Mediation.IOS
 		private static bool IsFinite(float value)
 		{
 			return !float.IsNaN(value) && !float.IsInfinity(value);
-		}
-
-		private static void ResolvePopupPlacement(float x, float y, float w, float h, out float resolvedX, out float resolvedY)
-		{
-			if (LooksLikeNormalizedCenter(x, y))
-			{
-				var density = Master.GetScreenDensity();
-				if (density <= 0f)
-					density = 1f;
-
-				float screenWidthDp = Screen.width / density;
-				float screenHeightDp = Screen.height / density;
-				float rawX = x * screenWidthDp - w * 0.5f;
-				float rawY = (1f - y) * screenHeightDp - h * 0.5f;
-				resolvedX = Mathf.Clamp(rawX, 0f, Mathf.Max(0f, screenWidthDp - w));
-				resolvedY = Mathf.Clamp(rawY, 0f, Mathf.Max(0f, screenHeightDp - h));
-				return;
-			}
-
-			resolvedX = x;
-			resolvedY = y;
-		}
-
-		private static bool LooksLikeNormalizedCenter(float x, float y)
-		{
-			return x >= 0f && x <= 1f && y >= 0f && y <= 1f;
 		}
 
 		private static string BuildInstanceId(IOS_RectGroupController<T> core)

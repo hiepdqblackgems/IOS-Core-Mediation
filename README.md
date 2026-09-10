@@ -38,6 +38,7 @@ Assets/
 
 ## Build Artifact
 `Assets/Plugins/iOS/Shared.xcframework` must be generated from the KMP `AdsMultiplatform` project, then copied into this package.
+Unity-facing bridge files are owned by this package; do not stage them in the KMP repository.
 
 Build command in the KMP project:
 
@@ -73,7 +74,7 @@ The framework binary is larger than GitHub's normal file limit, so this reposito
 - Native functions that return C strings allocate them on the native side. C# must import those returns as `IntPtr`, read them with `Marshal.PtrToStringAnsi`, and release them with `AdsMultiplatform_FreeCString`; do not import native-owned strings as `string`.
 
 ## Xcode and Dependency Notes
-- The package postprocess uses Unity `PlayerSettings.iOS.targetOSVersionString`, falling back to `15.6`.
+- The package postprocess uses Unity `PlayerSettings.iOS.targetOSVersionString`, falling back to `15.0`.
 - The package postprocess adds a shell phase for dynamic pod frameworks used by current mediation dependencies:
   - `AppLovinSDK/AppLovinSDK.framework`
   - `AdjustSignature/AdjustSigSdk.framework`

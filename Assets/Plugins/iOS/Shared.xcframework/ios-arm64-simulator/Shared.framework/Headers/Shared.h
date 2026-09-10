@@ -610,11 +610,11 @@ __attribute__((swift_name("AdsConsolePopupPlacement")))
 @interface SharedAdsConsolePopupPlacement : SharedBase
 - (instancetype)initWithXDp:(float)xDp yDp:(float)yDp widthDp:(float)widthDp heightDp:(float)heightDp __attribute__((swift_name("init(xDp:yDp:widthDp:heightDp:)"))) __attribute__((objc_designated_initializer));
 @property (class, readonly, getter=companion) SharedAdsConsolePopupPlacementCompanion *companion __attribute__((swift_name("companion")));
-- (SharedAdsConsolePopupPlacement *)coerceForViewportViewport:(SharedAdsConsoleViewport *)viewport __attribute__((swift_name("coerceForViewport(viewport:)")));
+- (SharedAdsConsolePopupPlacement *)coerceForViewportViewport:(SharedAdsConsoleViewport *)viewport layoutName:(NSString *)layoutName __attribute__((swift_name("coerceForViewport(viewport:layoutName:)")));
 - (SharedAdsConsolePopupPlacement *)doCopyXDp:(float)xDp yDp:(float)yDp widthDp:(float)widthDp heightDp:(float)heightDp __attribute__((swift_name("doCopy(xDp:yDp:widthDp:heightDp:)")));
 - (BOOL)isEqual:(id _Nullable)other __attribute__((swift_name("isEqual(_:)")));
 - (NSUInteger)hash __attribute__((swift_name("hash()")));
-- (SharedAdsConsolePopupPlacement *)stepViewport:(SharedAdsConsoleViewport *)viewport deltaX:(float)deltaX deltaY:(float)deltaY deltaWidth:(float)deltaWidth deltaHeight:(float)deltaHeight __attribute__((swift_name("step(viewport:deltaX:deltaY:deltaWidth:deltaHeight:)")));
+- (SharedAdsConsolePopupPlacement *)stepViewport:(SharedAdsConsoleViewport *)viewport layoutName:(NSString *)layoutName deltaX:(float)deltaX deltaY:(float)deltaY deltaWidth:(float)deltaWidth deltaHeight:(float)deltaHeight __attribute__((swift_name("step(viewport:layoutName:deltaX:deltaY:deltaWidth:deltaHeight:)")));
 - (NSString *)description __attribute__((swift_name("description()")));
 @property (readonly) float heightDp __attribute__((swift_name("heightDp")));
 @property (readonly) float widthDp __attribute__((swift_name("widthDp")));
@@ -629,6 +629,7 @@ __attribute__((swift_name("AdsConsolePopupPlacement.Companion")))
 + (instancetype)allocWithZone:(struct _NSZone *)zone __attribute__((unavailable));
 + (instancetype)companion __attribute__((swift_name("init()")));
 @property (class, readonly, getter=shared) SharedAdsConsolePopupPlacementCompanion *shared __attribute__((swift_name("shared")));
+@property (readonly) float MaxPopupWidthDp __attribute__((swift_name("MaxPopupWidthDp")));
 @property (readonly) float MinPopupHeightDp __attribute__((swift_name("MinPopupHeightDp")));
 @property (readonly) float MinPopupSizeDp __attribute__((swift_name("MinPopupSizeDp")));
 @property (readonly) float MinPopupWidthDp __attribute__((swift_name("MinPopupWidthDp")));
@@ -676,6 +677,7 @@ __attribute__((swift_name("AdsConsoleUiState")))
 - (NSUInteger)hash __attribute__((swift_name("hash()")));
 - (SharedAdsConsoleUiState *)selectFeatureFeature:(SharedAdsConsoleFeature *)feature __attribute__((swift_name("selectFeature(feature:)")));
 - (SharedAdsConsoleUiState *)selectFullscreenModeMode:(SharedFullscreenNativeAdMode *)mode __attribute__((swift_name("selectFullscreenMode(mode:)")));
+- (SharedAdsConsoleUiState *)selectLayoutNameLayoutName:(NSString *)layoutName __attribute__((swift_name("selectLayoutName(layoutName:)")));
 - (SharedAdsConsoleStatus *)statusState:(SharedNativeAdState *)state responseId:(NSString *)responseId adUnitId:(NSString *)adUnitId layoutName:(NSString *)layoutName __attribute__((swift_name("status(state:responseId:adUnitId:layoutName:)")));
 - (NSString *)description __attribute__((swift_name("description()")));
 @property (readonly) SharedAdsConsoleAssetVisibilityConfig *assetVisibility __attribute__((swift_name("assetVisibility")));
@@ -1315,11 +1317,13 @@ __attribute__((swift_name("PopupNativeAdLayoutCatalog")))
 + (instancetype)allocWithZone:(struct _NSZone *)zone __attribute__((unavailable));
 + (instancetype)popupNativeAdLayoutCatalog __attribute__((swift_name("init()")));
 @property (class, readonly, getter=shared) SharedPopupNativeAdLayoutCatalog *shared __attribute__((swift_name("shared")));
+- (float)minHeightDpLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("minHeightDp(layoutName:)")));
 - (NSString *)normalizeLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("normalize(layoutName:)")));
 - (BOOL)usesAdChoicesViewLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("usesAdChoicesView(layoutName:)")));
 - (BOOL)usesMediaViewLayoutName:(NSString * _Nullable)layoutName __attribute__((swift_name("usesMediaView(layoutName:)")));
 @property (readonly) NSArray<NSString *> *All __attribute__((swift_name("All")));
 @property (readonly) NSString *Default __attribute__((swift_name("Default")));
+@property (readonly) float MinCompactHeightDp __attribute__((swift_name("MinCompactHeightDp")));
 @property (readonly) float MinHeightDp __attribute__((swift_name("MinHeightDp")));
 @property (readonly) float MinWidthDp __attribute__((swift_name("MinWidthDp")));
 @property (readonly) NSString *MrecSingleManual01 __attribute__((swift_name("MrecSingleManual01")));
@@ -1337,6 +1341,7 @@ __attribute__((swift_name("PopupNativeAdLayoutCatalog")))
 @property (readonly) NSString *MrecSingleManual13 __attribute__((swift_name("MrecSingleManual13")));
 @property (readonly) NSString *MrecSingleManual14 __attribute__((swift_name("MrecSingleManual14")));
 @property (readonly) NSString *MrecSingleManual15 __attribute__((swift_name("MrecSingleManual15")));
+@property (readonly) NSString *MrecSingleManual16 __attribute__((swift_name("MrecSingleManual16")));
 @end
 
 __attribute__((swift_name("PopupNativeAdLoader")))

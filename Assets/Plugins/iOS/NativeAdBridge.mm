@@ -192,6 +192,22 @@ static UIViewController *AdsMultiplatformPresenter(void) {
     return presenter;
 }
 
+static UIViewController *AdsMultiplatformPreparedPresenter(void) {
+    UIWindow *window = AdsMultiplatformActiveWindow();
+    UIViewController *root = window.rootViewController;
+    if (root != nil) {
+        [root.view setNeedsLayout];
+        [root.view layoutIfNeeded];
+    }
+
+    UIViewController *presenter = AdsMultiplatformPresenter();
+    if (presenter != nil) {
+        [presenter.view setNeedsLayout];
+        [presenter.view layoutIfNeeded];
+    }
+    return presenter;
+}
+
 static void AdsMultiplatformRunOnMainSync(dispatch_block_t block) {
     if ([NSThread isMainThread]) {
         block();
@@ -206,6 +222,59 @@ static void AdsMultiplatformPrepareModal(UIViewController *controller) {
     if (@available(iOS 13.0, *)) {
         controller.modalInPresentation = YES;
     }
+}
+
+static const NSInteger AdsMultiplatformMaxPresentationWaitAttempts = 600;
+static const NSTimeInterval AdsMultiplatformPresentationRetryDelaySeconds = 0.1;
+
+static BOOL AdsMultiplatformRootPresenterIsBusy(void) {
+    UIWindow *window = AdsMultiplatformActiveWindow();
+    UIViewController *root = window.rootViewController;
+    if (root == nil) {
+        return YES;
+    }
+    if (root.presentedViewController != nil) {
+        return YES;
+    }
+    if (root.transitionCoordinator != nil || root.isBeingPresented || root.isBeingDismissed) {
+        return YES;
+    }
+    return NO;
+}
+
+static void AdsMultiplatformRunWhenRootPresenterAvailable(
+    NSString *instanceId,
+    NSInteger attempt,
+    dispatch_block_t block
+) {
+    if (!AdsMultiplatformRootPresenterIsBusy()) {
+        block();
+        return;
+    }
+
+    if (attempt == 0) {
+        NSLog(
+            @"AdsMultiplatform fullscreen native show deferred: presenter busy, instance=%@",
+            instanceId ?: @""
+        );
+    }
+
+    if (attempt >= AdsMultiplatformMaxPresentationWaitAttempts) {
+        NSLog(
+            @"AdsMultiplatform fullscreen native show failed: presenter stayed busy, instance=%@",
+            instanceId ?: @""
+        );
+        AdsMultiplatformSendEvent(instanceId, @"Failed");
+        return;
+    }
+
+    dispatch_time_t retryTime = dispatch_time(
+        DISPATCH_TIME_NOW,
+        (int64_t)(AdsMultiplatformPresentationRetryDelaySeconds * (double)NSEC_PER_SEC)
+    );
+    dispatch_after(retryTime, dispatch_get_main_queue(), ^{
+        AdsMultiplatformRunWhenRootPresenterAvailable(instanceId, attempt + 1, block);
+    });
 }
 
 static NSMutableSet<NSString *> *AdsMultiplatformPausedFullscreenInstances(void) {
@@ -590,23 +659,25 @@ extern "C" {
         NSString *nativeInstanceId = instanceId == nullptr ? @"" : [NSString stringWithUTF8String:instanceId];
         NSString *nativeLayoutName = layoutName == nullptr ? @"" : [NSString stringWithUTF8String:layoutName];
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
-                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
-                return;
-            }
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
-            UIViewController *controller = [bridge fullscreenViewControllerForUnityInstanceId:nativeInstanceId
-                                                                                    layoutName:nativeLayoutName
-                                                                              durationSeconds:durationSeconds
-                                                                             fallbackAdUnitId:@""
-                                                                                     onClosed:^{
-                AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
-                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
-            }];
-            AdsMultiplatformPrepareModal(controller);
-            AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
-            [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+            AdsMultiplatformRunWhenRootPresenterAvailable(nativeInstanceId, 0, ^{
+                if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                    return;
+                }
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                UIViewController *controller = [bridge fullscreenViewControllerForUnityInstanceId:nativeInstanceId
+                                                                                        layoutName:nativeLayoutName
+                                                                                  durationSeconds:durationSeconds
+                                                                                 fallbackAdUnitId:@""
+                                                                                         onClosed:^{
+                    AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                }];
+                AdsMultiplatformPrepareModal(controller);
+                AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
+                [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+            });
         });
     }
 
@@ -641,41 +712,43 @@ extern "C" {
         NSString *nativeOrientation = orientation == nullptr ? @"auto" : [NSString stringWithUTF8String:orientation];
         NSString *nativeFallbackAdUnitId = fallbackAdUnitId == nullptr ? @"" : [NSString stringWithUTF8String:fallbackAdUnitId];
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
-                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
-                return;
-            }
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
-            UIViewController *controller = [bridge fullscreenViewControllerForUnityWithOptionsInstanceId:nativeInstanceId
-                                                                                                    mode:nativeMode
-                                                                                          layoutNamesCsv:nativeLayoutNamesCsv
-                                                                                         durationSeconds:durationSeconds
-                                                                                      durationsSecondsCsv:nativeDurationsSecondsCsv
-                                                                                             orientation:nativeOrientation
-                                                                                               autoClose:autoClose != 0
-                                                                                           pauseGameplay:pauseGameplay != 0
-                                                                                       enableAdComeback:enableAdComeback != 0
-                                                                                                  showTCD:showTCD != 0
-                                                                                             delaySeconds:delaySeconds
-                                                                                          timeUpCSeconds:timeUpCSeconds
-                                                                                         fallbackAdUnitId:nativeFallbackAdUnitId
-                                                                                                      cta:cta != 0
-                                                                                                 headline:headline != 0
-                                                                                                     body:body != 0
-                                                                                              description:description != 0
-                                                                                                     icon:icon != 0
-                                                                                               advertiser:advertiser != 0
-                                                                                                    media:media != 0
-                                                                                                mediaImage:mediaImage != 0
-                                                                                                mediaVideo:mediaVideo != 0
-                                                                                                onClosed:^{
-                AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
-                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
-            }];
-            AdsMultiplatformPrepareModal(controller);
-            AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
-            [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+            AdsMultiplatformRunWhenRootPresenterAvailable(nativeInstanceId, 0, ^{
+                if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                    return;
+                }
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                UIViewController *controller = [bridge fullscreenViewControllerForUnityWithOptionsInstanceId:nativeInstanceId
+                                                                                                        mode:nativeMode
+                                                                                              layoutNamesCsv:nativeLayoutNamesCsv
+                                                                                             durationSeconds:durationSeconds
+                                                                                          durationsSecondsCsv:nativeDurationsSecondsCsv
+                                                                                                 orientation:nativeOrientation
+                                                                                                   autoClose:autoClose != 0
+                                                                                               pauseGameplay:pauseGameplay != 0
+                                                                                           enableAdComeback:enableAdComeback != 0
+                                                                                                      showTCD:showTCD != 0
+                                                                                                 delaySeconds:delaySeconds
+                                                                                              timeUpCSeconds:timeUpCSeconds
+                                                                                             fallbackAdUnitId:nativeFallbackAdUnitId
+                                                                                                          cta:cta != 0
+                                                                                                     headline:headline != 0
+                                                                                                         body:body != 0
+                                                                                                  description:description != 0
+                                                                                                         icon:icon != 0
+                                                                                                   advertiser:advertiser != 0
+                                                                                                        media:media != 0
+                                                                                                    mediaImage:mediaImage != 0
+                                                                                                    mediaVideo:mediaVideo != 0
+                                                                                                    onClosed:^{
+                    AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                }];
+                AdsMultiplatformPrepareModal(controller);
+                AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
+                [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+            });
         });
     }
 
@@ -724,13 +797,17 @@ extern "C" {
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
             SharedIosInterstitialAdSdk *sdk = [[SharedIosInterstitialAdSdk alloc] init];
-            [sdk loadWithConfigRootViewController:AdsMultiplatformPresenter()
+            [sdk loadWithConfigRootViewController:AdsMultiplatformPreparedPresenter()
                                            alias:nativeInstanceId
                                     adUnitIdsCsv:unitIds
                                preloadBufferSize:preloadBufferSize < 1 ? 1 : preloadBufferSize
                                       autoReload:autoReload != 0
                                   onStateChanged:^(SharedNativeAdState *state) {
-                AdsMultiplatformSendEvent(nativeInstanceId, AdsMultiplatformStateName(state));
+                NSString *stateName = AdsMultiplatformStateName(state);
+                if ([stateName isEqualToString:@"onClosed"] || [stateName isEqualToString:@"Failed"]) {
+                    AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
+                }
+                AdsMultiplatformSendEvent(nativeInstanceId, stateName);
             }];
             result = YES;
         });
@@ -742,7 +819,7 @@ extern "C" {
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
             SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            result = [bridge loadInterstitialRootViewController:AdsMultiplatformPresenter()
+            result = [bridge loadInterstitialRootViewController:AdsMultiplatformPreparedPresenter()
                                                           alias:nativeInstanceId
                                                      bufferSize:bufferSize < 1 ? 1 : bufferSize];
         });
@@ -755,9 +832,13 @@ extern "C" {
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
             SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            result = [bridge showInterstitialRootViewController:AdsMultiplatformPresenter()
+            AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
+            result = [bridge showInterstitialRootViewController:AdsMultiplatformPreparedPresenter()
                                                           alias:nativeInstanceId
                                                     optionsJson:nativeOptionsJson];
+            if (!result) {
+                AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
+            }
         });
         return result ? 1 : 0;
     }
@@ -767,6 +848,7 @@ extern "C" {
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
             SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+            AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
             result = [bridge destroyAlias:nativeInstanceId];
         });
         return result ? 1 : 0;
