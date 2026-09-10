@@ -11,6 +11,7 @@ namespace BG_Library.NET.Mediation.IOS
 		private IFSInstance ad;
 
 		private readonly string idKey;
+		private const string BridgeLogTag = "[ios-bridge]";
 
 		public bool HasAdInstance => ad != null;
 
@@ -204,9 +205,40 @@ namespace BG_Library.NET.Mediation.IOS
 		private IFSInstance CreateAdInstance()
 		{
 			if (core.Info != null && core.Info.IsRewarded)
+			{
+				BridgeLog($"select instance group={core.GroupName} route=native_fullscreen reason=rewarded_legacy id={idKey}");
+				NetFlowDebugSystem.Log(Layer.group, Module.ios_api_fs, $"Create.Route {core.GroupName}",
+					() => "route=native_fullscreen reason=rewarded_legacy");
 				return new IOSFSNativeInstance(new[] { idKey }, core.LayoutGroup);
+			}
 
-			return new IOSInterstitialInstance(new[] { idKey });
+			var interstitials = core.Info?.AndroidInterstitials ?? default;
+			if (core.Info is IOS_FAInfo faInfo && faInfo.MediationPriority == E_MediationPriority.Android)
+			{
+				BridgeLog(
+					$"select instance group={core.GroupName} route=native_fullscreen mediationPriority={FormatPriority(faInfo.MediationPriority)} id={idKey} layoutGroup={core.LayoutGroup?.GroupName ?? ""}");
+				NetFlowDebugSystem.Log(Layer.group, Module.ios_api_fs, $"Create.Route {core.GroupName}",
+					() => $"route=native_fullscreen mediationPriority={FormatPriority(faInfo.MediationPriority)} layoutGroup={core.LayoutGroup?.GroupName ?? ""}");
+				return new IOSFSNativeInstance(new[] { idKey }, core.LayoutGroup);
+			}
+
+			int bufferSize = interstitials.IsPreloadAd && interstitials.BufferSize > 0 ? interstitials.BufferSize : 1;
+			string priorityLog = core.Info is IOS_FAInfo interInfo ? FormatPriority(interInfo.MediationPriority) : "unknown";
+			BridgeLog(
+				$"select instance group={core.GroupName} route=interstitial mediationPriority={priorityLog} id={idKey} preload={interstitials.IsPreloadAd} buffer={bufferSize}");
+			NetFlowDebugSystem.Log(Layer.group, Module.ios_api_fs, $"Create.Route {core.GroupName}",
+				() => $"route=interstitial mediationPriority={priorityLog} preload={interstitials.IsPreloadAd} buffer={bufferSize}");
+			return new IOSInterstitialInstance(new[] { idKey }, bufferSize);
+		}
+
+		private static void BridgeLog(string message)
+		{
+			UnityEngine.Debug.Log($"{BridgeLogTag} {message}");
+		}
+
+		private static string FormatPriority(E_MediationPriority priority)
+		{
+			return $"{priority}({(int)priority})";
 		}
 
 		private string AdInstanceName()

@@ -35,6 +35,8 @@ namespace BG_Library.NET.AdCore.MainIOS
 					layoutGroup: ResolveLayoutGroup(platform.LayoutGroupName),
 					groupName: group.GroupName,
 					maxShowCount: group.MaxShowCount,
+					mediationPriority: group.MediationPriority,
+					androidInterstitials: platform.AndroidInterstitials,
 					disablePostInitReload: group.DisablePostInitReload));
 			}
 

@@ -9,16 +9,19 @@ namespace BG_Library.NET.Mediation.IOS
 {
 	public abstract class IOS_FSInfo : InfoBase
 	{
-		private const string TestNativeAdUnitId = "ca-app-pub-3940256099942544/3986624511";
+		protected const string TestNativeAdUnitId = "ca-app-pub-3940256099942544/3986624511";
 
 		private readonly LayoutGroupConfig layoutGroup;
+		private readonly AndroidInterstitials androidInterstitials;
 
-		protected IOS_FSInfo(string id, LayoutGroupConfig layoutGroup) : base(id)
+		protected IOS_FSInfo(string id, LayoutGroupConfig layoutGroup, AndroidInterstitials androidInterstitials = default) : base(id)
 		{
 			this.layoutGroup = layoutGroup;
+			this.androidInterstitials = androidInterstitials;
 		}
 
 		public LayoutGroupConfig LayoutGroup => layoutGroup;
+		public AndroidInterstitials AndroidInterstitials => androidInterstitials;
 		protected virtual string TestAdUnitId => TestNativeAdUnitId;
 
 		public override string Id
@@ -51,19 +54,30 @@ namespace BG_Library.NET.Mediation.IOS
 
 		private readonly string groupName;
 		private readonly int maxShowCount;
+		private readonly E_MediationPriority mediationPriority;
 		private readonly bool disablePostInitReload;
 
-		public IOS_FAInfo(string id, LayoutGroupConfig layoutGroup, string groupName, int maxShowCount, bool disablePostInitReload = false)
-			: base(id, layoutGroup)
+		public IOS_FAInfo(
+			string id,
+			LayoutGroupConfig layoutGroup,
+			string groupName,
+			int maxShowCount,
+			E_MediationPriority mediationPriority = E_MediationPriority.Android,
+			AndroidInterstitials androidInterstitials = default,
+			bool disablePostInitReload = false)
+			: base(id, layoutGroup, androidInterstitials)
 		{
 			this.groupName = groupName;
 			this.maxShowCount = maxShowCount;
+			this.mediationPriority = mediationPriority;
 			this.disablePostInitReload = disablePostInitReload;
 		}
 
 		public string GroupName => groupName;
 		public int MaxShowCount => maxShowCount;
-		protected override string TestAdUnitId => TestInterstitialAdUnitId;
+		public E_MediationPriority MediationPriority => mediationPriority;
+		protected override string TestAdUnitId =>
+			MediationPriority == E_MediationPriority.Android ? TestNativeAdUnitId : TestInterstitialAdUnitId;
 		public override bool DisablePostInitReload => disablePostInitReload;
 		public override bool IsRewarded => false;
 	}

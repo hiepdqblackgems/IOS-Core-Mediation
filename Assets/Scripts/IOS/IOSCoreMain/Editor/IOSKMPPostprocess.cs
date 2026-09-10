@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
-using UnityEditor.Callbacks;
 using UnityEditor.iOS.Xcode;
 
 namespace BG_Library.NET.AdCore.MainIOS
@@ -12,9 +11,14 @@ namespace BG_Library.NET.AdCore.MainIOS
     {
         private const string FallbackIosDeploymentTarget = "15.0";
         private const string SupportedPlatforms = "iphoneos iphonesimulator";
+        private const string BridgeLogTag = "[ios-bridge]";
         private const string EmbedDynamicPodsPhaseName = "BG Embed iOS Dynamic Pod Frameworks";
         private const string CopyComposeResourcesPhaseName = "BG Copy KMP Compose Resources";
         private const string GoogleMobileAdsUnityPluginLibraryPath = "Libraries/Plugins/iOS/unity-plugin-library.a";
+        private const string SharedXcframeworkAssetPath =
+            "BG Lib/IOS-Core-Mediation/Assets/Plugins/iOS/Shared.xcframework";
+        private const string NativeBridgeAssetPath =
+            "BG Lib/IOS-Core-Mediation/Assets/Plugins/iOS/NativeAdBridge.mm";
         private const string SimulatorGoogleMobileAdsUnityPluginAssetPath =
             "BG Lib/IOS-Core-Mediation/Assets/Plugins/iOS/Simulator/unity-plugin-library-arm64-simulator.a.bytes";
         private const string FirebaseUnityPluginLibraryDirectoryPath = "Libraries/Plugins/iOS/Firebase";
@@ -34,6 +38,12 @@ namespace BG_Library.NET.AdCore.MainIOS
             "AdjustSigSdk.xcframework in Embed Frameworks"
         };
 
+        private static readonly string[] SharedFrameworkSlices =
+        {
+            "ios-arm64",
+            "ios-arm64-simulator"
+        };
+
         private static readonly string[] FirebaseUnityPluginLibraries =
         {
             "libFirebaseCppApp.a",
@@ -41,11 +51,16 @@ namespace BG_Library.NET.AdCore.MainIOS
             "libFirebaseCppRemoteConfig.a"
         };
 
-        [PostProcessBuild(101)]
         public static void ApplyKMPBuildSettings(BuildTarget target, string buildPath)
         {
+            LogBridge($"postprocess start target={target} buildPath={buildPath}");
             if (target != BuildTarget.iOS)
+            {
+                LogBridge($"postprocess skipped reason=target_not_ios target={target}");
                 return;
+            }
+
+            LogBridgeAssetStatus();
 
             string plistPath = Path.Combine(buildPath, "Info.plist");
             if (File.Exists(plistPath))
@@ -62,6 +77,7 @@ namespace BG_Library.NET.AdCore.MainIOS
             project.ReadFromFile(projectPath);
             bool isSimulatorExport = IsSimulatorExport(projectPath);
             string deploymentTarget = ResolveIosDeploymentTarget();
+            LogBridge($"postprocess applying deploymentTarget={deploymentTarget} simulatorExport={isSimulatorExport}");
 
             ApplyIosOnlyBuildSettings(project, project.GetUnityMainTargetGuid(), deploymentTarget);
             ApplyIosOnlyBuildSettings(project, project.GetUnityFrameworkTargetGuid(), deploymentTarget);
@@ -81,6 +97,46 @@ namespace BG_Library.NET.AdCore.MainIOS
                 ReplaceGoogleMobileAdsUnityPluginForSimulator(buildPath);
                 ReplaceFirebaseUnityPluginLibrariesForSimulator(buildPath);
             }
+
+            LogBridge("postprocess finished");
+        }
+
+        private static void LogBridge(string message)
+        {
+            UnityEngine.Debug.Log($"{BridgeLogTag} {message}");
+        }
+
+        private static void WarnBridge(string message)
+        {
+            UnityEngine.Debug.LogWarning($"{BridgeLogTag} {message}");
+        }
+
+        private static void LogBridgeAssetStatus()
+        {
+            string sharedPath = Path.Combine(UnityEngine.Application.dataPath, SharedXcframeworkAssetPath);
+            string nativeBridgePath = Path.Combine(UnityEngine.Application.dataPath, NativeBridgeAssetPath);
+
+            if (Directory.Exists(sharedPath))
+            {
+                LogBridge($"Shared.xcframework found path={sharedPath}");
+                foreach (string slice in SharedFrameworkSlices)
+                {
+                    string binaryPath = Path.Combine(sharedPath, slice, "Shared.framework", "Shared");
+                    if (File.Exists(binaryPath))
+                        LogBridge($"Shared.xcframework slice found slice={slice} binary={binaryPath}");
+                    else
+                        WarnBridge($"Shared.xcframework slice missing slice={slice} binary={binaryPath}");
+                }
+            }
+            else
+            {
+                WarnBridge($"Shared.xcframework missing path={sharedPath}");
+            }
+
+            if (File.Exists(nativeBridgePath))
+                LogBridge($"NativeAdBridge.mm found path={nativeBridgePath}");
+            else
+                WarnBridge($"NativeAdBridge.mm missing path={nativeBridgePath}");
         }
 
         private static void ApplyIosOnlyBuildSettings(PBXProject project, string targetGuid, string deploymentTarget)
@@ -110,7 +166,7 @@ namespace BG_Library.NET.AdCore.MainIOS
             string[] frameworkSubpaths = ResolveDynamicPodFrameworksToEmbed(projectPath);
             if (frameworkSubpaths.Length == 0)
             {
-                UnityEngine.Debug.Log(
+                LogBridge(
                     "Skipped BG dynamic pod framework embed phase because Xcode Embed Frameworks already handles AppLovinSDK and AdjustSigSdk.");
                 return;
             }
@@ -152,20 +208,20 @@ namespace BG_Library.NET.AdCore.MainIOS
 
             if (!File.Exists(sourcePath))
             {
-                UnityEngine.Debug.LogWarning(
+                WarnBridge(
                     $"Missing simulator Google Mobile Ads Unity plugin library at {sourcePath}.");
                 return;
             }
 
             if (!File.Exists(destinationPath))
             {
-                UnityEngine.Debug.LogWarning(
+                WarnBridge(
                     $"Missing exported Google Mobile Ads Unity plugin library at {destinationPath}.");
                 return;
             }
 
             File.Copy(sourcePath, destinationPath, true);
-            UnityEngine.Debug.Log(
+            LogBridge(
                 $"Replaced Google Mobile Ads Unity plugin library with arm64 simulator build: {destinationPath}");
         }
 
@@ -184,18 +240,18 @@ namespace BG_Library.NET.AdCore.MainIOS
 
                 if (!File.Exists(sourcePath))
                 {
-                    UnityEngine.Debug.LogWarning($"Missing simulator Firebase Unity plugin library at {sourcePath}.");
+                    WarnBridge($"Missing simulator Firebase Unity plugin library at {sourcePath}.");
                     continue;
                 }
 
                 if (!File.Exists(destinationPath))
                 {
-                    UnityEngine.Debug.LogWarning($"Missing exported Firebase Unity plugin library at {destinationPath}.");
+                    WarnBridge($"Missing exported Firebase Unity plugin library at {destinationPath}.");
                     continue;
                 }
 
                 File.Copy(sourcePath, destinationPath, true);
-                UnityEngine.Debug.Log($"Replaced Firebase Unity plugin library with arm64 simulator build: {destinationPath}");
+                LogBridge($"Replaced Firebase Unity plugin library with arm64 simulator build: {destinationPath}");
             }
         }
 
@@ -211,7 +267,7 @@ namespace BG_Library.NET.AdCore.MainIOS
                 return;
 
             File.WriteAllText(projectPath, updatedProjectText);
-            UnityEngine.Debug.Log("Removed -all_load from iOS linker flags to avoid static framework duplicate symbols.");
+            LogBridge("Removed -all_load from iOS linker flags to avoid static framework duplicate symbols.");
         }
 
         private static string[] ResolveDynamicPodFrameworksToEmbed(string projectPath)
@@ -246,7 +302,7 @@ namespace BG_Library.NET.AdCore.MainIOS
                 return;
 
             File.WriteAllText(projectPath, updatedProjectText);
-            UnityEngine.Debug.Log("Removed redundant BG dynamic pod framework embed phase from iOS Xcode project.");
+            LogBridge("Removed redundant BG dynamic pod framework embed phase from iOS Xcode project.");
         }
 
         private static bool ProjectEmbedsAllDynamicPodFrameworks(string projectText)
@@ -321,12 +377,12 @@ namespace BG_Library.NET.AdCore.MainIOS
                 "for BG_FRAMEWORK_SUBPATH in" + BuildDynamicPodFrameworkArguments(frameworkSubpaths) + "; do",
                 "    BG_SOURCE_FRAMEWORK=\"${BG_XCFRAMEWORKS_BUILD_DIR}/${BG_FRAMEWORK_SUBPATH}\"",
                 "    if [ ! -d \"${BG_SOURCE_FRAMEWORK}\" ]; then",
-                "        echo \"${BG_FRAMEWORK_SUBPATH} not found; skip embed\"",
+                "        echo \"[ios-bridge] ${BG_FRAMEWORK_SUBPATH} not found; skip embed\"",
                 "        continue",
                 "    fi",
                 "",
                 "    BG_DEST_FRAMEWORK=\"${BG_FRAMEWORKS_DIR}/$(basename \"${BG_SOURCE_FRAMEWORK}\")\"",
-                "    echo \"Embedding ${BG_SOURCE_FRAMEWORK}\"",
+                "    echo \"[ios-bridge] Embedding ${BG_SOURCE_FRAMEWORK}\"",
                 "    rsync -av --delete --exclude \"Headers\" --exclude \"PrivateHeaders\" \"${BG_SOURCE_FRAMEWORK}\" \"${BG_FRAMEWORKS_DIR}/\"",
                 "",
                 "    if [ \"${CODE_SIGNING_ALLOWED:-NO}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then",
@@ -358,7 +414,7 @@ namespace BG_Library.NET.AdCore.MainIOS
                 "done",
                 "",
                 "if [ -z \"${BG_SHARED_XCFRAMEWORK}\" ]; then",
-                "    echo \"Shared.xcframework not found; skip KMP compose resources\"",
+                "    echo \"[ios-bridge] Shared.xcframework not found; skip KMP compose resources\"",
                 "    exit 0",
                 "fi",
                 "",
@@ -372,14 +428,14 @@ namespace BG_Library.NET.AdCore.MainIOS
                 "BG_APP_RESOURCES=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/compose-resources/composeResources\"",
                 "BG_CTA_RESOURCE=\"adsmultiplatform.shared.generated.resources/drawable/bg_btn_bg005_02.png\"",
                 "if [ ! -d \"${BG_SOURCE_RESOURCES}\" ]; then",
-                "    echo \"${BG_SOURCE_RESOURCES} not found; skip KMP compose resources\"",
+                "    echo \"[ios-bridge] ${BG_SOURCE_RESOURCES} not found; skip KMP compose resources\"",
                 "    exit 0",
                 "fi",
                 "",
                 "copy_bg_compose_resources() {",
                 "    BG_DEST_RESOURCES=\"$1\"",
                 "    mkdir -p \"${BG_DEST_RESOURCES}\"",
-                "    echo \"Copying KMP compose resources from ${BG_SOURCE_RESOURCES} to ${BG_DEST_RESOURCES}\"",
+                "    echo \"[ios-bridge] Copying KMP compose resources from ${BG_SOURCE_RESOURCES} to ${BG_DEST_RESOURCES}\"",
                 "    rsync -a --delete \"${BG_SOURCE_RESOURCES}/\" \"${BG_DEST_RESOURCES}/\"",
                 "}",
                 "",
@@ -395,11 +451,11 @@ namespace BG_Library.NET.AdCore.MainIOS
                 "done",
                 "",
                 "if [ ! -f \"${BG_APP_RESOURCES}/${BG_CTA_RESOURCE}\" ]; then",
-                "    echo \"Required KMP CTA drawable missing after copy: ${BG_APP_RESOURCES}/${BG_CTA_RESOURCE}\"",
+                "    echo \"[ios-bridge] Required KMP CTA drawable missing after copy: ${BG_APP_RESOURCES}/${BG_CTA_RESOURCE}\"",
                 "    exit 1",
                 "fi",
                 "",
-                "echo \"Verified KMP CTA drawable: ${BG_APP_RESOURCES}/${BG_CTA_RESOURCE}\"",
+                "echo \"[ios-bridge] Verified KMP CTA drawable: ${BG_APP_RESOURCES}/${BG_CTA_RESOURCE}\"",
                 ""
             });
         }
@@ -419,7 +475,7 @@ namespace BG_Library.NET.AdCore.MainIOS
                 return;
 
             File.WriteAllText(projectPath, updatedProjectText);
-            UnityEngine.Debug.Log($"Removed stale {phaseName} build phase from iOS Xcode project.");
+            LogBridge($"Removed stale {phaseName} build phase from iOS Xcode project.");
         }
     }
 }

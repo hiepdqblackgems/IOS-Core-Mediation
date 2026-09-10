@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import <Shared/Shared.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,6 +15,47 @@ extern "C" void UnityPause(int pause) __attribute__((weak_import));
 static const char *AdsMultiplatformCallbackObject = "AdsMultiplatformCallbacks";
 static const char *AdsMultiplatformCallbackMethod = "OnNativeAdEvent";
 static NSString *const AdsMultiplatformDefaultPopupInstanceId = @"popup_native_default";
+static NSString *const AdsMultiplatformBridgeLogTag = @"[ios-bridge]";
+
+static void AdsMultiplatformBridgeLog(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
+static void AdsMultiplatformBridgeLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    NSLog(@"%@ %@", AdsMultiplatformBridgeLogTag, message ?: @"");
+}
+
+static BOOL AdsMultiplatformSharedClassAvailable(NSString *apiName, NSString *className, NSString *instanceId) {
+    Class sharedClass = NSClassFromString(className);
+    if (sharedClass == Nil) {
+        AdsMultiplatformBridgeLog(
+            @"api=%@ shared.xcframework unavailable class=%@ instance=%@",
+            apiName ?: @"",
+            className ?: @"",
+            instanceId ?: @""
+        );
+        return NO;
+    }
+
+    AdsMultiplatformBridgeLog(
+        @"api=%@ shared.xcframework reachable class=%@ instance=%@",
+        apiName ?: @"",
+        className ?: @"",
+        instanceId ?: @""
+    );
+    return YES;
+}
+
+static void AdsMultiplatformBridgeException(NSString *apiName, NSString *instanceId, NSException *exception) {
+    AdsMultiplatformBridgeLog(
+        @"api=%@ exception instance=%@ name=%@ reason=%@",
+        apiName ?: @"",
+        instanceId ?: @"",
+        exception.name ?: @"",
+        exception.reason ?: @""
+    );
+}
 
 static void AdsMultiplatformSendEvent(NSString *instanceId, NSString *stateName) {
     NSString *payload = [NSString stringWithFormat:@"%@|%@", instanceId ?: @"", stateName ?: @""];
@@ -253,15 +295,15 @@ static void AdsMultiplatformRunWhenRootPresenterAvailable(
     }
 
     if (attempt == 0) {
-        NSLog(
-            @"AdsMultiplatform fullscreen native show deferred: presenter busy, instance=%@",
+        AdsMultiplatformBridgeLog(
+            @"api=ShowFullscreen deferred reason=presenter_busy instance=%@",
             instanceId ?: @""
         );
     }
 
     if (attempt >= AdsMultiplatformMaxPresentationWaitAttempts) {
-        NSLog(
-            @"AdsMultiplatform fullscreen native show failed: presenter stayed busy, instance=%@",
+        AdsMultiplatformBridgeLog(
+            @"api=ShowFullscreen failed reason=presenter_stayed_busy instance=%@",
             instanceId ?: @""
         );
         AdsMultiplatformSendEvent(instanceId, @"Failed");
@@ -332,10 +374,24 @@ static void AdsMultiplatformResumeUnityForFullscreen(NSString *instanceId) {
 extern "C" {
     void AdsMultiplatform_LoadNativeAd(const char *adUnitId) {
         NSString *unitId = adUnitId == nullptr ? @"" : [NSString stringWithUTF8String:adUnitId];
+        NSString *apiName = @"LoadNativeAd";
+        AdsMultiplatformBridgeLog(@"api=%@ request adUnitEmpty=%@", apiName, unitId.length == 0 ? @"true" : @"false");
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", @"single")) {
+                return;
+            }
             UIViewController *presenter = AdsMultiplatformPresenter();
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            [bridge loadAdUnitId:unitId rootViewController:presenter];
+            if (presenter == nil) {
+                AdsMultiplatformBridgeLog(@"api=%@ failed reason=missing_presenter", apiName);
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                [bridge loadAdUnitId:unitId rootViewController:presenter];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call", apiName);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, @"single", exception);
+            }
         });
     }
 
@@ -346,16 +402,41 @@ extern "C" {
     ) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"" : [NSString stringWithUTF8String:instanceId];
         NSString *unitIds = adUnitIdsCsv == nullptr ? @"" : [NSString stringWithUTF8String:adUnitIdsCsv];
+        NSString *apiName = @"LoadFullscreen";
+        AdsMultiplatformBridgeLog(
+            @"api=%@ request instance=%@ idsEmpty=%@ reload=%@",
+            apiName,
+            nativeInstanceId,
+            unitIds.length == 0 ? @"true" : @"false",
+            enableReloadAfterShow != 0 ? @"true" : @"false"
+        );
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
             UIViewController *presenter = AdsMultiplatformPresenter();
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            [bridge loadFullscreenInstanceId:nativeInstanceId
-                                adUnitIdsCsv:unitIds
-                          rootViewController:presenter
-                        enableReloadAfterShow:enableReloadAfterShow != 0
-                              onStateChanged:^(SharedNativeAdState *state) {
-                AdsMultiplatformSendEvent(nativeInstanceId, state.name);
-            }];
+            if (presenter == nil) {
+                AdsMultiplatformBridgeLog(@"api=%@ failed reason=missing_presenter instance=%@", apiName, nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                [bridge loadFullscreenInstanceId:nativeInstanceId
+                                    adUnitIdsCsv:unitIds
+                              rootViewController:presenter
+                            enableReloadAfterShow:enableReloadAfterShow != 0
+                                  onStateChanged:^(SharedNativeAdState *state) {
+                    NSString *stateName = AdsMultiplatformStateName(state);
+                    AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=%@", apiName, nativeInstanceId, stateName);
+                    AdsMultiplatformSendEvent(nativeInstanceId, stateName);
+                }];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
     }
 
@@ -374,65 +455,148 @@ extern "C" {
         NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
         NSString *unitIds = AdsMultiplatformString(adUnitIdsCsv);
         NSString *layoutNames = AdsMultiplatformString(layoutNamesCsv);
+        NSString *apiName = @"LoadBanner";
+        AdsMultiplatformBridgeLog(
+            @"api=%@ request instance=%@ idsEmpty=%@ layouts=%@ reload=%d",
+            apiName,
+            nativeInstanceId,
+            unitIds.length == 0 ? @"true" : @"false",
+            layoutNames,
+            timeReloadSeconds
+        );
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-            [sdk loadWithConfigRootViewController:AdsMultiplatformPresenter()
-                                            alias:nativeInstanceId
-                                     adUnitIdsCsv:unitIds
-                                   layoutNamesCsv:layoutNames
-                                timeReloadSeconds:timeReloadSeconds
-                             timeCountdownSeconds:timeCountdownSeconds
-                              timeCollapseSeconds:timeCollapseSeconds
-                                   onStateChanged:^(SharedNativeAdState *state) {
-                AdsMultiplatformSendEvent(nativeInstanceId, AdsMultiplatformStateName(state));
-            }];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            UIViewController *presenter = AdsMultiplatformPresenter();
+            if (presenter == nil) {
+                AdsMultiplatformBridgeLog(@"api=%@ failed reason=missing_presenter instance=%@", apiName, nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            @try {
+                SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                [sdk loadWithConfigRootViewController:presenter
+                                                alias:nativeInstanceId
+                                         adUnitIdsCsv:unitIds
+                                       layoutNamesCsv:layoutNames
+                                    timeReloadSeconds:timeReloadSeconds
+                                 timeCountdownSeconds:timeCountdownSeconds
+                                  timeCollapseSeconds:timeCollapseSeconds
+                                       onStateChanged:^(SharedNativeAdState *state) {
+                    NSString *stateName = AdsMultiplatformStateName(state);
+                    AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=%@", apiName, nativeInstanceId, stateName);
+                    AdsMultiplatformSendEvent(nativeInstanceId, stateName);
+                }];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
     }
 
     void AdsMultiplatform_ShowBannerNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *apiName = @"ShowBanner";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-            [sdk showRootViewController:AdsMultiplatformPresenter() alias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            @try {
+                SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                [sdk showRootViewController:AdsMultiplatformPresenter() alias:nativeInstanceId];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
     }
 
     int AdsMultiplatform_ExpandBannerNativeAd(const char *instanceId, int enableClick) {
         NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *apiName = @"ExpandBanner";
         __block BOOL result = NO;
         if ([NSThread isMainThread]) {
-            SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-            result = [sdk expandAlias:nativeInstanceId enableClick:enableClick != 0];
+            if (AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                @try {
+                    SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                    result = [sdk expandAlias:nativeInstanceId enableClick:enableClick != 0];
+                } @catch (NSException *exception) {
+                    AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                }
+            }
         } else {
             dispatch_sync(dispatch_get_main_queue(), ^{
-                SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-                result = [sdk expandAlias:nativeInstanceId enableClick:enableClick != 0];
+                if (AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                    @try {
+                        SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                        result = [sdk expandAlias:nativeInstanceId enableClick:enableClick != 0];
+                    } @catch (NSException *exception) {
+                        AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                    }
+                }
             });
         }
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
     void AdsMultiplatform_CollapseBannerNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *apiName = @"CollapseBanner";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-            [sdk collapseAlias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
+            @try {
+                SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                [sdk collapseAlias:nativeInstanceId];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
     }
 
     void AdsMultiplatform_HideBannerNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *apiName = @"HideBanner";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-            [sdk hideAlias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
+            @try {
+                SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                [sdk hideAlias:nativeInstanceId];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
     }
 
     void AdsMultiplatform_DestroyBannerNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformString(instanceId);
+        NSString *apiName = @"DestroyBanner";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
-            [sdk destroyAlias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosBannerNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
+            @try {
+                SharedIosBannerNativeAdSdk *sdk = [[SharedIosBannerNativeAdSdk alloc] init];
+                [sdk destroyAlias:nativeInstanceId];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
     }
 
@@ -452,15 +616,33 @@ extern "C" {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
         NSString *unitIds = AdsMultiplatformString(adUnitIdsCsv);
         NSString *nativeLayoutName = AdsMultiplatformString(layoutName);
+        NSString *apiName = @"LoadPopup";
+        AdsMultiplatformBridgeLog(
+            @"api=%@ request instance=%@ idsEmpty=%@ layout=%@ rect=(%.2f,%.2f,%.2f,%.2f) autoClose=%@ ctrOverlay=%@",
+            apiName,
+            nativeInstanceId,
+            unitIds.length == 0 ? @"true" : @"false",
+            nativeLayoutName,
+            xDp,
+            yDp,
+            adWidthDp,
+            adHeightDp,
+            autoClose != 0 ? @"true" : @"false",
+            enableCtrOverlay != 0 ? @"true" : @"false"
+        );
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
             UIViewController *presenter = AdsMultiplatformPresenter();
             if (presenter == nil) {
-                NSLog(@"AdsMultiplatform popup load skipped instance=%@ reason=missing_presenter", nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ skipped instance=%@ reason=missing_presenter", apiName, nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
                 return;
             }
             if (!AdsMultiplatformIsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp)) {
-                NSLog(@"AdsMultiplatform popup load skipped instance=%@ reason=invalid_layout", nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ skipped instance=%@ reason=invalid_layout", apiName, nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
                 return;
             }
@@ -480,17 +662,20 @@ extern "C" {
                                      enableCtrOverlay:enableCtrOverlay != 0
                                        onStateChanged:^(SharedNativeAdState *state) {
                     NSString *stateName = AdsMultiplatformStateName(state);
+                    AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=%@", apiName, nativeInstanceId, stateName);
                     if ([stateName isEqualToString:@"Failed"] || [stateName isEqualToString:@"onClosed"]) {
                         AdsMultiplatformClearPopupShowing(nativeInstanceId);
                     }
                     AdsMultiplatformSendEvent(nativeInstanceId, stateName);
                     if ([stateName isEqualToString:@"Loaded"] &&
                         AdsMultiplatformPopupBoolSelector(sdk, "isDisplayableAlias:", nativeInstanceId)) {
+                        AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=Displayable", apiName, nativeInstanceId);
                         AdsMultiplatformSendEvent(nativeInstanceId, @"Displayable");
                     }
                 }];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup load exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
             }
@@ -505,21 +690,36 @@ extern "C" {
         float adHeightDp
     ) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"UpdatePopupPlacement";
+        AdsMultiplatformBridgeLog(
+            @"api=%@ request instance=%@ rect=(%.2f,%.2f,%.2f,%.2f)",
+            apiName,
+            nativeInstanceId,
+            xDp,
+            yDp,
+            adWidthDp,
+            adHeightDp
+        );
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
             if (!AdsMultiplatformIsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp)) {
-                NSLog(@"AdsMultiplatform popup placement skipped instance=%@ reason=invalid_layout", nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ skipped instance=%@ reason=invalid_layout", apiName, nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
                 return;
             }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             @try {
                 [sdk updatePlacementAlias:nativeInstanceId
-                                      xDp:xDp
-                                      yDp:yDp
-                                adWidthDp:adWidthDp
-                               adHeightDp:adHeightDp];
+	                                      xDp:xDp
+	                                      yDp:yDp
+	                                adWidthDp:adWidthDp
+	                               adHeightDp:adHeightDp];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup placement exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
             }
         });
@@ -527,20 +727,28 @@ extern "C" {
 
     void AdsMultiplatform_ShowPopupNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"ShowPopup";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             UIViewController *presenter = AdsMultiplatformPresenter();
             NSString *blockReason = AdsMultiplatformPopupShowBlockReason(sdk, nativeInstanceId, presenter);
             if (blockReason.length > 0) {
-                NSLog(@"AdsMultiplatform popup show skipped instance=%@ reason=%@", nativeInstanceId, blockReason);
+                AdsMultiplatformBridgeLog(@"api=%@ skipped instance=%@ reason=%@", apiName, nativeInstanceId, blockReason);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
                 return;
             }
             @try {
                 AdsMultiplatformMarkPopupShowing(nativeInstanceId);
                 [sdk showRootViewController:presenter alias:nativeInstanceId];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup show exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
                 AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
@@ -550,13 +758,20 @@ extern "C" {
 
     void AdsMultiplatform_ClosePopupNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"ClosePopup";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             @try {
                 [sdk closeAlias:nativeInstanceId];
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup close exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
             }
@@ -565,13 +780,20 @@ extern "C" {
 
     void AdsMultiplatform_HidePopupNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"HidePopup";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             @try {
                 [sdk hideAlias:nativeInstanceId];
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup hide exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
             }
@@ -580,13 +802,20 @@ extern "C" {
 
     void AdsMultiplatform_StopPopupNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"StopPopup";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             @try {
                 [sdk stopAlias:nativeInstanceId];
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup stop exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
             }
@@ -595,13 +824,20 @@ extern "C" {
 
     void AdsMultiplatform_DestroyPopupNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"DestroyPopup";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             @try {
                 [sdk destroyAlias:nativeInstanceId];
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
             } @catch (NSException *exception) {
-                NSLog(@"AdsMultiplatform popup destroy exception instance=%@ reason=%@", nativeInstanceId, exception.reason);
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
                 AdsMultiplatformClearPopupShowing(nativeInstanceId);
                 AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
             }
@@ -610,21 +846,31 @@ extern "C" {
 
     int AdsMultiplatform_IsPopupNativeAdReady(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"IsPopupReady";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             result = AdsMultiplatformPopupBoolSelector(sdk, "isReadyAlias:", nativeInstanceId);
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
     int AdsMultiplatform_IsPopupNativeAdDisplayable(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"IsPopupDisplayable";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             result = AdsMultiplatformPopupBoolSelector(sdk, "isDisplayableAlias:", nativeInstanceId);
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
@@ -636,47 +882,82 @@ extern "C" {
 
     const char *AdsMultiplatform_PopupNativeAdStateFor(const char *instanceId) {
         NSString *nativeInstanceId = AdsMultiplatformPopupInstanceId(AdsMultiplatformString(instanceId));
+        NSString *apiName = @"PopupStateFor";
         __block NSString *state = @"NotLoaded";
         AdsMultiplatformRunOnMainSync(^{
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosPopupNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
             SharedIosPopupNativeAdSdk *sdk = [[SharedIosPopupNativeAdSdk alloc] init];
             state = AdsMultiplatformPopupState(sdk, nativeInstanceId);
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ state=%@", apiName, nativeInstanceId, state);
 
         return AdsMultiplatformCopyCString(state, "NotLoaded");
     }
 
     void AdsMultiplatform_ShowNativeAd(const char *adUnitId) {
         NSString *unitId = adUnitId == nullptr ? @"" : [NSString stringWithUTF8String:adUnitId];
+        NSString *apiName = @"ShowNativeAd";
+        AdsMultiplatformBridgeLog(@"api=%@ request adUnitEmpty=%@", apiName, unitId.length == 0 ? @"true" : @"false");
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            UIViewController *controller = [bridge viewControllerAdUnitId:unitId];
-            AdsMultiplatformPrepareModal(controller);
-            [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", @"single")) {
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                UIViewController *controller = [bridge viewControllerAdUnitId:unitId];
+                AdsMultiplatformPrepareModal(controller);
+                [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call", apiName);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, @"single", exception);
+            }
         });
     }
 
     void AdsMultiplatform_ShowFullscreenNativeAd(const char *instanceId, const char *layoutName, double durationSeconds) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"" : [NSString stringWithUTF8String:instanceId];
         NSString *nativeLayoutName = layoutName == nullptr ? @"" : [NSString stringWithUTF8String:layoutName];
+        NSString *apiName = @"ShowFullscreen";
+        AdsMultiplatformBridgeLog(
+            @"api=%@ request instance=%@ layout=%@ duration=%.2f unityPause=shared",
+            apiName,
+            nativeInstanceId,
+            nativeLayoutName,
+            durationSeconds
+        );
         dispatch_async(dispatch_get_main_queue(), ^{
             AdsMultiplatformRunWhenRootPresenterAvailable(nativeInstanceId, 0, ^{
-                if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
+                if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedFullscreenNativeAdRegistry", nativeInstanceId) ||
+                    !AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
                     AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
                     return;
                 }
-                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-                UIViewController *controller = [bridge fullscreenViewControllerForUnityInstanceId:nativeInstanceId
-                                                                                        layoutName:nativeLayoutName
-                                                                                  durationSeconds:durationSeconds
-                                                                                 fallbackAdUnitId:@""
-                                                                                         onClosed:^{
-                    AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
-                    AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
-                }];
-                AdsMultiplatformPrepareModal(controller);
-                AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
-                AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
-                [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+                if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
+                    AdsMultiplatformBridgeLog(@"api=%@ skipped instance=%@ reason=not_ready", apiName, nativeInstanceId);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                    return;
+                }
+                @try {
+                    SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                    UIViewController *controller = [bridge fullscreenViewControllerForUnityInstanceId:nativeInstanceId
+                                                                                            layoutName:nativeLayoutName
+                                                                                      durationSeconds:durationSeconds
+                                                                                     fallbackAdUnitId:@""
+                                                                                             onClosed:^{
+                        AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=onClosed", apiName, nativeInstanceId);
+                        AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                    }];
+                    AdsMultiplatformPrepareModal(controller);
+                    AdsMultiplatformBridgeLog(@"api=%@ unity pause delegated to shared.xcframework instance=%@", apiName, nativeInstanceId);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
+                    [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+                    AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+                } @catch (NSException *exception) {
+                    AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                }
             });
         });
     }
@@ -711,78 +992,127 @@ extern "C" {
         NSString *nativeDurationsSecondsCsv = durationsSecondsCsv == nullptr ? @"" : [NSString stringWithUTF8String:durationsSecondsCsv];
         NSString *nativeOrientation = orientation == nullptr ? @"auto" : [NSString stringWithUTF8String:orientation];
         NSString *nativeFallbackAdUnitId = fallbackAdUnitId == nullptr ? @"" : [NSString stringWithUTF8String:fallbackAdUnitId];
+        NSString *apiName = @"ShowFullscreenWithOptions";
+        AdsMultiplatformBridgeLog(
+            @"api=%@ request instance=%@ mode=%@ layouts=%@ duration=%.2f orientation=%@ pauseGameplay=%@ enableAdComeback=%@ unityPause=shared",
+            apiName,
+            nativeInstanceId,
+            nativeMode,
+            nativeLayoutNamesCsv,
+            durationSeconds,
+            nativeOrientation,
+            pauseGameplay != 0 ? @"true" : @"false",
+            enableAdComeback != 0 ? @"true" : @"false"
+        );
         dispatch_async(dispatch_get_main_queue(), ^{
             AdsMultiplatformRunWhenRootPresenterAvailable(nativeInstanceId, 0, ^{
-                if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
+                if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedFullscreenNativeAdRegistry", nativeInstanceId) ||
+                    !AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
                     AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
                     return;
                 }
-                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-                UIViewController *controller = [bridge fullscreenViewControllerForUnityWithOptionsInstanceId:nativeInstanceId
-                                                                                                        mode:nativeMode
-                                                                                              layoutNamesCsv:nativeLayoutNamesCsv
-                                                                                             durationSeconds:durationSeconds
-                                                                                          durationsSecondsCsv:nativeDurationsSecondsCsv
-                                                                                                 orientation:nativeOrientation
-                                                                                                   autoClose:autoClose != 0
-                                                                                               pauseGameplay:pauseGameplay != 0
-                                                                                           enableAdComeback:enableAdComeback != 0
-                                                                                                      showTCD:showTCD != 0
-                                                                                                 delaySeconds:delaySeconds
-                                                                                              timeUpCSeconds:timeUpCSeconds
-                                                                                             fallbackAdUnitId:nativeFallbackAdUnitId
-                                                                                                          cta:cta != 0
-                                                                                                     headline:headline != 0
-                                                                                                         body:body != 0
-                                                                                                  description:description != 0
-                                                                                                         icon:icon != 0
-                                                                                                   advertiser:advertiser != 0
-                                                                                                        media:media != 0
-                                                                                                    mediaImage:mediaImage != 0
-                                                                                                    mediaVideo:mediaVideo != 0
-                                                                                                    onClosed:^{
-                    AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
-                    AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
-                }];
-                AdsMultiplatformPrepareModal(controller);
-                AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
-                AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
-                [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+                if (![SharedFullscreenNativeAdRegistry.shared isReadyAlias:nativeInstanceId]) {
+                    AdsMultiplatformBridgeLog(@"api=%@ skipped instance=%@ reason=not_ready", apiName, nativeInstanceId);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                    return;
+                }
+                @try {
+                    SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                    UIViewController *controller = [bridge fullscreenViewControllerForUnityWithOptionsInstanceId:nativeInstanceId
+                                                                                                            mode:nativeMode
+                                                                                                  layoutNamesCsv:nativeLayoutNamesCsv
+                                                                                                 durationSeconds:durationSeconds
+                                                                                              durationsSecondsCsv:nativeDurationsSecondsCsv
+                                                                                                     orientation:nativeOrientation
+                                                                                                       autoClose:autoClose != 0
+                                                                                                   pauseGameplay:pauseGameplay != 0
+                                                                                               enableAdComeback:enableAdComeback != 0
+                                                                                                          showTCD:showTCD != 0
+                                                                                                     delaySeconds:delaySeconds
+                                                                                                  timeUpCSeconds:timeUpCSeconds
+                                                                                                 fallbackAdUnitId:nativeFallbackAdUnitId
+                                                                                                              cta:cta != 0
+                                                                                                         headline:headline != 0
+                                                                                                             body:body != 0
+                                                                                                      description:description != 0
+                                                                                                             icon:icon != 0
+                                                                                                       advertiser:advertiser != 0
+                                                                                                            media:media != 0
+                                                                                                        mediaImage:mediaImage != 0
+                                                                                                        mediaVideo:mediaVideo != 0
+                                                                                                        onClosed:^{
+                        AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=onClosed", apiName, nativeInstanceId);
+                        AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                    }];
+                    AdsMultiplatformPrepareModal(controller);
+                    AdsMultiplatformBridgeLog(@"api=%@ unity pause delegated to shared.xcframework instance=%@", apiName, nativeInstanceId);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Shown");
+                    [AdsMultiplatformPresenter() presentViewController:controller animated:YES completion:nil];
+                    AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+                } @catch (NSException *exception) {
+                    AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                    AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                }
             });
         });
     }
 
     void AdsMultiplatform_HideNativeAd(void) {
+        NSString *apiName = @"HideNativeAd";
+        AdsMultiplatformBridgeLog(@"api=%@ request", apiName);
         dispatch_async(dispatch_get_main_queue(), ^{
             [AdsMultiplatformPresenter() dismissViewControllerAnimated:YES completion:nil];
+            AdsMultiplatformBridgeLog(@"api=%@ dispatched presenter dismiss", apiName);
         });
     }
 
     void AdsMultiplatform_HideFullscreenNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"" : [NSString stringWithUTF8String:instanceId];
+        NSString *apiName = @"HideFullscreen";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
             AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
             AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
             [AdsMultiplatformPresenter() dismissViewControllerAnimated:YES completion:nil];
+            AdsMultiplatformBridgeLog(@"api=%@ dispatched presenter dismiss instance=%@", apiName, nativeInstanceId);
         });
     }
 
     void AdsMultiplatform_DestroyFullscreenNativeAd(const char *instanceId) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"" : [NSString stringWithUTF8String:instanceId];
+        NSString *apiName = @"DestroyFullscreen";
+        AdsMultiplatformBridgeLog(@"api=%@ request instance=%@", apiName, nativeInstanceId);
         dispatch_async(dispatch_get_main_queue(), ^{
-            SharedIosFullscreenNativeAdSdk *sdk = [[SharedIosFullscreenNativeAdSdk alloc] init];
-            [sdk destroyAlias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosFullscreenNativeAdSdk", nativeInstanceId)) {
+                return;
+            }
+            @try {
+                SharedIosFullscreenNativeAdSdk *sdk = [[SharedIosFullscreenNativeAdSdk alloc] init];
+                [sdk destroyAlias:nativeInstanceId];
+                AdsMultiplatformBridgeLog(@"api=%@ dispatched shared call instance=%@", apiName, nativeInstanceId);
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
     }
 
     int AdsMultiplatform_CreateInterstitial(const char *instanceId, const char *configJson) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
         NSString *nativeConfigJson = configJson == nullptr ? @"" : [NSString stringWithUTF8String:configJson];
+        NSString *apiName = @"CreateInterstitial";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            result = [bridge createInterstitialAlias:nativeInstanceId configJson:nativeConfigJson];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                result = [bridge createInterstitialAlias:nativeInstanceId configJson:nativeConfigJson];
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
@@ -794,73 +1124,126 @@ extern "C" {
     ) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
         NSString *unitIds = adUnitIdsCsv == nullptr ? @"" : [NSString stringWithUTF8String:adUnitIdsCsv];
+        NSString *apiName = @"LoadInterstitial";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
-            SharedIosInterstitialAdSdk *sdk = [[SharedIosInterstitialAdSdk alloc] init];
-            [sdk loadWithConfigRootViewController:AdsMultiplatformPreparedPresenter()
-                                           alias:nativeInstanceId
-                                    adUnitIdsCsv:unitIds
-                               preloadBufferSize:preloadBufferSize < 1 ? 1 : preloadBufferSize
-                                      autoReload:autoReload != 0
-                                  onStateChanged:^(SharedNativeAdState *state) {
-                NSString *stateName = AdsMultiplatformStateName(state);
-                if ([stateName isEqualToString:@"onClosed"] || [stateName isEqualToString:@"Failed"]) {
-                    AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
-                }
-                AdsMultiplatformSendEvent(nativeInstanceId, stateName);
-            }];
-            result = YES;
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedIosInterstitialAdSdk", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            UIViewController *presenter = AdsMultiplatformPreparedPresenter();
+            if (presenter == nil) {
+                AdsMultiplatformBridgeLog(@"api=%@ failed reason=missing_presenter instance=%@", apiName, nativeInstanceId);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            @try {
+                SharedIosInterstitialAdSdk *sdk = [[SharedIosInterstitialAdSdk alloc] init];
+                [sdk loadWithConfigRootViewController:presenter
+                                               alias:nativeInstanceId
+                                        adUnitIdsCsv:unitIds
+                                   preloadBufferSize:preloadBufferSize < 1 ? 1 : preloadBufferSize
+                                          autoReload:autoReload != 0
+                                      onStateChanged:^(SharedNativeAdState *state) {
+                    NSString *stateName = AdsMultiplatformStateName(state);
+                    AdsMultiplatformBridgeLog(@"api=%@ callback instance=%@ state=%@", apiName, nativeInstanceId, stateName);
+                    AdsMultiplatformSendEvent(nativeInstanceId, stateName);
+                }];
+                result = YES;
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
     int AdsMultiplatform_LoadInterstitial(const char *instanceId, int bufferSize) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        NSString *apiName = @"LoadInterstitialLegacy";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            result = [bridge loadInterstitialRootViewController:AdsMultiplatformPreparedPresenter()
-                                                          alias:nativeInstanceId
-                                                     bufferSize:bufferSize < 1 ? 1 : bufferSize];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                result = [bridge loadInterstitialRootViewController:AdsMultiplatformPreparedPresenter()
+                                                              alias:nativeInstanceId
+                                                         bufferSize:bufferSize < 1 ? 1 : bufferSize];
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+            }
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
     int AdsMultiplatform_ShowInterstitial(const char *instanceId, const char *optionsJson) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
         NSString *nativeOptionsJson = optionsJson == nullptr ? nil : [NSString stringWithUTF8String:optionsJson];
+        NSString *apiName = @"ShowInterstitial";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            AdsMultiplatformPauseUnityForFullscreen(nativeInstanceId);
-            result = [bridge showInterstitialRootViewController:AdsMultiplatformPreparedPresenter()
-                                                          alias:nativeInstanceId
-                                                    optionsJson:nativeOptionsJson];
-            if (!result) {
-                AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                AdsMultiplatformBridgeLog(@"api=%@ unity pause delegated to shared.xcframework instance=%@", apiName, nativeInstanceId);
+                result = [bridge showInterstitialRootViewController:AdsMultiplatformPreparedPresenter()
+                                                              alias:nativeInstanceId
+                                                        optionsJson:nativeOptionsJson];
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+                AdsMultiplatformSendEvent(nativeInstanceId, @"Failed");
             }
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
     int AdsMultiplatform_DestroyInterstitial(const char *instanceId) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        NSString *apiName = @"DestroyInterstitial";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            AdsMultiplatformResumeUnityForFullscreen(nativeInstanceId);
-            result = [bridge destroyAlias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
+                AdsMultiplatformSendEvent(nativeInstanceId, @"onClosed");
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                AdsMultiplatformBridgeLog(@"api=%@ unity resume delegated to shared.xcframework instance=%@", apiName, nativeInstanceId);
+                result = [bridge destroyAlias:nativeInstanceId];
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 
     int AdsMultiplatform_IsInterstitialReady(const char *instanceId) {
         NSString *nativeInstanceId = instanceId == nullptr ? @"interstitial" : [NSString stringWithUTF8String:instanceId];
+        NSString *apiName = @"IsInterstitialReady";
         __block BOOL result = NO;
         AdsMultiplatformRunOnMainSync(^{
-            SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
-            result = [bridge isReadyAlias:nativeInstanceId];
+            if (!AdsMultiplatformSharedClassAvailable(apiName, @"SharedNativeAdIosBridge", nativeInstanceId)) {
+                return;
+            }
+            @try {
+                SharedNativeAdIosBridge *bridge = [[SharedNativeAdIosBridge alloc] init];
+                result = [bridge isReadyAlias:nativeInstanceId];
+            } @catch (NSException *exception) {
+                AdsMultiplatformBridgeException(apiName, nativeInstanceId, exception);
+            }
         });
+        AdsMultiplatformBridgeLog(@"api=%@ result instance=%@ success=%@", apiName, nativeInstanceId, result ? @"true" : @"false");
         return result ? 1 : 0;
     }
 

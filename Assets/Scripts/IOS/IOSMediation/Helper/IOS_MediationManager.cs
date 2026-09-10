@@ -75,6 +75,9 @@ namespace BG_Library.NET.Mediation.IOS
 						d.AddKV("format", BG_ConstValue.adtype_fa);
 						d.AddKV("mediation", BG_ConstValue.mediation_ios);
 						d.AddKV("id", info.Id);
+						d.AddKV("layoutGroup", info.LayoutGroup?.GroupName ?? "");
+						d.AddKV("mediationPriority", $"{info.MediationPriority}({(int)info.MediationPriority})");
+						d.AddKV("switchToInterstitialAndroid", info.AndroidInterstitials.SwitchToInterstitialAndroid);
 					});
 
 				FA_Groups[i] = new(

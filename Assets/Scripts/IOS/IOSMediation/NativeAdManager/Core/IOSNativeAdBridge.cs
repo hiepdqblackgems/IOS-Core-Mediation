@@ -46,6 +46,7 @@ namespace BG_Library.NET.IOSSDK
 		private const string IosTestInterstitialAdUnitId = "ca-app-pub-3940256099942544/4411468910";
 		private const int DefaultBannerCountdownSeconds = 5;
 		private const int DefaultBannerCollapseSeconds = 5;
+		private const string LogTag = "[ios-bridge]";
 
 		private static readonly Dictionary<string, IOSNativeAdCallbackTarget> Instances =
 			new Dictionary<string, IOSNativeAdCallbackTarget>();
@@ -195,6 +196,7 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeInstanceId(instanceId);
 			IOSNativeAdCallbackReceiver.EnsureReceiver();
 			Instances[safeInstanceId] = target;
+			BridgeLog("register callback instance=" + safeInstanceId + " target=" + target.GetType().Name);
 		}
 
 		public static void Unregister(string instanceId)
@@ -202,13 +204,16 @@ namespace BG_Library.NET.IOSSDK
 			if (string.IsNullOrEmpty(instanceId))
 				return;
 
-			Instances.Remove(SafeInstanceId(instanceId));
+			string safeInstanceId = SafeInstanceId(instanceId);
+			Instances.Remove(safeInstanceId);
+			BridgeLog("unregister callback instance=" + safeInstanceId);
 		}
 
 		public static void LoadFullscreen(string instanceId, bool enableReloadAfterShow, string[] adUnitIds)
 		{
 			string safeInstanceId = SafeInstanceId(instanceId);
 			string adUnitIdsCsv = JoinAdUnitIds(adUnitIds);
+			BridgeLog("request LoadFullscreen instance=" + safeInstanceId + " ids=" + CsvCount(adUnitIdsCsv) + " reload=" + enableReloadAfterShow);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_LoadFullscreenNativeAdWithReload(
@@ -216,7 +221,7 @@ namespace BG_Library.NET.IOSSDK
 				adUnitIdsCsv,
 				enableReloadAfterShow ? 1 : 0);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] LoadFullscreen is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("LoadFullscreen", safeInstanceId);
 #endif
 		}
 
@@ -224,11 +229,12 @@ namespace BG_Library.NET.IOSSDK
 		{
 			string safeInstanceId = SafeInstanceId(instanceId);
 			string safeLayoutName = NormalizeLayoutName(layoutName);
+			BridgeLog("request ShowFullscreen instance=" + safeInstanceId + " layout=" + safeLayoutName + " duration=" + durationSeconds);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_ShowFullscreenNativeAd(safeInstanceId, safeLayoutName, durationSeconds);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowFullscreen is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ShowFullscreen", safeInstanceId);
 #endif
 		}
 
@@ -253,6 +259,14 @@ namespace BG_Library.NET.IOSSDK
 			string layoutNamesCsv = JoinLayoutNames(layoutNames, fallbackLayoutName);
 			string safeOrientation = SafeOrientation(orientation);
 			string safeFallbackAdUnitId = string.IsNullOrEmpty(fallbackAdUnitId) ? IosTestAdUnitId : fallbackAdUnitId;
+			BridgeLog(
+				"request ShowFullscreenWithOptions instance=" + safeInstanceId +
+				" mode=" + safeMode +
+				" layouts=" + layoutNamesCsv +
+				" duration=" + durationSeconds +
+				" orientation=" + safeOrientation +
+				" pauseGameplay=" + pauseGameplay +
+				" enableAdComeback=" + enableAdComeback);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_ShowFullscreenNativeAdWithOptions(
@@ -279,29 +293,31 @@ namespace BG_Library.NET.IOSSDK
 				Flag(assetVisibility, x => x.mediaImage),
 				Flag(assetVisibility, x => x.mediaVideo));
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowFullscreenWithOptions is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ShowFullscreenWithOptions", safeInstanceId);
 #endif
 		}
 
 		public static void HideFullscreen(string instanceId)
 		{
 			string safeInstanceId = SafeInstanceId(instanceId);
+			BridgeLog("request HideFullscreen instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_HideFullscreenNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] HideFullscreen is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("HideFullscreen", safeInstanceId);
 #endif
 		}
 
 		public static void DestroyFullscreen(string instanceId)
 		{
 			string safeInstanceId = SafeInstanceId(instanceId);
+			BridgeLog("request DestroyFullscreen instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_DestroyFullscreenNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] DestroyFullscreen is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("DestroyFullscreen", safeInstanceId);
 #endif
 		}
 
@@ -314,11 +330,14 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
 			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestInterstitialAdUnitId);
 			string configJson = InterstitialConfigJson(safeAdUnitIds, preloadBufferSize, autoReload);
+			BridgeLog("request CreateInterstitial instance=" + safeInstanceId + " ids=" + CsvCount(safeAdUnitIds) + " preload=" + preloadBufferSize + " autoReload=" + autoReload);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_CreateInterstitial(safeInstanceId, configJson) != 0;
+			bool result = AdsMultiplatform_CreateInterstitial(safeInstanceId, configJson) != 0;
+			BridgeLogResult("CreateInterstitial", safeInstanceId, result);
+			return result;
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] CreateInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("CreateInterstitial", safeInstanceId);
 			return false;
 #endif
 		}
@@ -331,15 +350,18 @@ namespace BG_Library.NET.IOSSDK
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
 			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestInterstitialAdUnitId);
+			BridgeLog("request LoadInterstitial instance=" + safeInstanceId + " ids=" + CsvCount(safeAdUnitIds) + " preload=" + preloadBufferSize + " autoReload=" + autoReload);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_LoadInterstitialWithConfig(
+			bool result = AdsMultiplatform_LoadInterstitialWithConfig(
 				safeInstanceId,
 				safeAdUnitIds,
 				preloadBufferSize < 1 ? 1 : preloadBufferSize,
 				autoReload ? 1 : 0) != 0;
+			BridgeLogResult("LoadInterstitial", safeInstanceId, result);
+			return result;
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] LoadInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("LoadInterstitial", safeInstanceId);
 			return false;
 #endif
 		}
@@ -348,11 +370,14 @@ namespace BG_Library.NET.IOSSDK
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
 			string optionsJson = InterstitialOptionsJson(immersiveMode);
+			BridgeLog("request ShowInterstitial instance=" + safeInstanceId + " immersive=" + immersiveMode);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_ShowInterstitial(safeInstanceId, optionsJson) != 0;
+			bool result = AdsMultiplatform_ShowInterstitial(safeInstanceId, optionsJson) != 0;
+			BridgeLogResult("ShowInterstitial", safeInstanceId, result);
+			return result;
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ShowInterstitial", safeInstanceId);
 			return false;
 #endif
 		}
@@ -360,11 +385,14 @@ namespace BG_Library.NET.IOSSDK
 		public static bool DestroyInterstitial(string instanceId = DefaultInterstitialInstanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
+			BridgeLog("request DestroyInterstitial instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_DestroyInterstitial(safeInstanceId) != 0;
+			bool result = AdsMultiplatform_DestroyInterstitial(safeInstanceId) != 0;
+			BridgeLogResult("DestroyInterstitial", safeInstanceId, result);
+			return result;
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] DestroyInterstitial is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("DestroyInterstitial", safeInstanceId);
 			return false;
 #endif
 		}
@@ -374,8 +402,11 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultInterstitialInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_IsInterstitialReady(safeInstanceId) != 0;
+			bool result = AdsMultiplatform_IsInterstitialReady(safeInstanceId) != 0;
+			BridgeLogResult("IsInterstitialReady", safeInstanceId, result);
+			return result;
 #else
+			BridgeUnavailable("IsInterstitialReady", safeInstanceId);
 			return false;
 #endif
 		}
@@ -391,6 +422,7 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultBannerInstanceId);
 			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestAdUnitId);
 			string safeLayoutNames = SafeCsv(layoutNamesCsv, DefaultBannerLayoutName);
+			BridgeLog("request LoadBanner instance=" + safeInstanceId + " ids=" + CsvCount(safeAdUnitIds) + " layouts=" + safeLayoutNames + " reload=" + timeReloadSeconds);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_LoadBannerNativeAdWithConfig(
@@ -401,29 +433,33 @@ namespace BG_Library.NET.IOSSDK
 				NonNegative(timeCountdownSeconds),
 				NonNegative(timeCollapseSeconds));
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] LoadBanner is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("LoadBanner", safeInstanceId);
 #endif
 		}
 
 		public static void ShowBanner(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultBannerInstanceId);
+			BridgeLog("request ShowBanner instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_ShowBannerNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowBanner is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ShowBanner", safeInstanceId);
 #endif
 		}
 
 		public static bool ExpandBanner(string instanceId, bool enableClick)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultBannerInstanceId);
+			BridgeLog("request ExpandBanner instance=" + safeInstanceId + " enableClick=" + enableClick);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_ExpandBannerNativeAd(safeInstanceId, enableClick ? 1 : 0) != 0;
+			bool result = AdsMultiplatform_ExpandBannerNativeAd(safeInstanceId, enableClick ? 1 : 0) != 0;
+			BridgeLogResult("ExpandBanner", safeInstanceId, result);
+			return result;
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ExpandBanner is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ExpandBanner", safeInstanceId);
 			return false;
 #endif
 		}
@@ -431,33 +467,36 @@ namespace BG_Library.NET.IOSSDK
 		public static void CollapseBanner(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultBannerInstanceId);
+			BridgeLog("request CollapseBanner instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_CollapseBannerNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] CollapseBanner is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("CollapseBanner", safeInstanceId);
 #endif
 		}
 
 		public static void HideBanner(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultBannerInstanceId);
+			BridgeLog("request HideBanner instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_HideBannerNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] HideBanner is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("HideBanner", safeInstanceId);
 #endif
 		}
 
 		public static void DestroyBanner(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultBannerInstanceId);
+			BridgeLog("request DestroyBanner instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_DestroyBannerNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] DestroyBanner is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("DestroyBanner", safeInstanceId);
 #endif
 		}
 
@@ -477,10 +516,16 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
 			string safeAdUnitIds = SafeCsv(adUnitIdsCsv, IosTestAdUnitId);
 			string safeLayoutName = SafeLayoutName(layoutName, DefaultPopupLayoutName);
+			BridgeLog(
+				"request LoadPopup instance=" + safeInstanceId +
+				" ids=" + CsvCount(safeAdUnitIds) +
+				" layout=" + safeLayoutName +
+				" rect=(" + xDp + "," + yDp + "," + adWidthDp + "," + adHeightDp + ")" +
+				" autoClose=" + autoClose);
 
 			if (!IsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp))
 			{
-				UnityEngine.Debug.LogWarning("[IOSNativeAdBridge] LoadPopup skipped. Invalid layout instance=" + safeInstanceId);
+				BridgeWarn("skip LoadPopup instance=" + safeInstanceId + " reason=invalid_layout");
 				DispatchSyntheticEvent(safeInstanceId, IOSNativeAdCallbackNames.Failed);
 				return;
 			}
@@ -499,7 +544,7 @@ namespace BG_Library.NET.IOSSDK
 				autoClose ? 1 : 0,
 				enableCtrOverlay ? 1 : 0);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] LoadPopup is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("LoadPopup", safeInstanceId);
 #endif
 		}
 
@@ -511,10 +556,11 @@ namespace BG_Library.NET.IOSSDK
 			float adHeightDp)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			BridgeLog("request UpdatePopupPlacement instance=" + safeInstanceId + " rect=(" + xDp + "," + yDp + "," + adWidthDp + "," + adHeightDp + ")");
 
 			if (!IsValidPopupLayout(xDp, yDp, adWidthDp, adHeightDp))
 			{
-				UnityEngine.Debug.LogWarning("[IOSNativeAdBridge] UpdatePopupPlacement skipped. Invalid layout instance=" + safeInstanceId);
+				BridgeWarn("skip UpdatePopupPlacement instance=" + safeInstanceId + " reason=invalid_layout");
 				DispatchSyntheticEvent(safeInstanceId, IOSNativeAdCallbackNames.Failed);
 				return;
 			}
@@ -527,13 +573,14 @@ namespace BG_Library.NET.IOSSDK
 				adWidthDp,
 				adHeightDp);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] UpdatePopupPlacement is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("UpdatePopupPlacement", safeInstanceId);
 #endif
 		}
 
 		public static void ShowPopup(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			BridgeLog("request ShowPopup instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			if (!IsPopupDisplayable(safeInstanceId))
@@ -543,51 +590,55 @@ namespace BG_Library.NET.IOSSDK
 			}
 			AdsMultiplatform_ShowPopupNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ShowPopup is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ShowPopup", safeInstanceId);
 #endif
 		}
 
 		public static void ClosePopup(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			BridgeLog("request ClosePopup instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_ClosePopupNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] ClosePopup is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("ClosePopup", safeInstanceId);
 #endif
 		}
 
 		public static void HidePopup(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			BridgeLog("request HidePopup instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_HidePopupNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] HidePopup is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("HidePopup", safeInstanceId);
 #endif
 		}
 
 		public static void StopPopup(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			BridgeLog("request StopPopup instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_StopPopupNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] StopPopup is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("StopPopup", safeInstanceId);
 #endif
 		}
 
 		public static void DestroyPopup(string instanceId)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
+			BridgeLog("request DestroyPopup instance=" + safeInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
 			AdsMultiplatform_DestroyPopupNativeAd(safeInstanceId);
 #else
-			UnityEngine.Debug.Log("[IOSNativeAdBridge] DestroyPopup is only executed in an iOS player build. instance=" + safeInstanceId);
+			BridgeUnavailable("DestroyPopup", safeInstanceId);
 #endif
 		}
 
@@ -596,8 +647,11 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_IsPopupNativeAdReady(safeInstanceId) != 0;
+			bool result = AdsMultiplatform_IsPopupNativeAdReady(safeInstanceId) != 0;
+			BridgeLogResult("IsPopupReady", safeInstanceId, result);
+			return result;
 #else
+			BridgeUnavailable("IsPopupReady", safeInstanceId);
 			return false;
 #endif
 		}
@@ -607,8 +661,11 @@ namespace BG_Library.NET.IOSSDK
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
 
 #if UNITY_IOS && !UNITY_EDITOR
-			return AdsMultiplatform_IsPopupNativeAdDisplayable(safeInstanceId) != 0;
+			bool result = AdsMultiplatform_IsPopupNativeAdDisplayable(safeInstanceId) != 0;
+			BridgeLogResult("IsPopupDisplayable", safeInstanceId, result);
+			return result;
 #else
+			BridgeUnavailable("IsPopupDisplayable", safeInstanceId);
 			return false;
 #endif
 		}
@@ -623,10 +680,15 @@ namespace BG_Library.NET.IOSSDK
 			{
 				statePtr = AdsMultiplatform_PopupNativeAdStateFor(safeInstanceId);
 				if (statePtr == System.IntPtr.Zero)
+				{
+					BridgeLog("result PopupStateFor instance=" + safeInstanceId + " state=NotLoaded reason=null_ptr");
 					return "NotLoaded";
+				}
 
 				string state = Marshal.PtrToStringAnsi(statePtr);
-				return string.IsNullOrEmpty(state) ? "NotLoaded" : state;
+				string safeState = string.IsNullOrEmpty(state) ? "NotLoaded" : state;
+				BridgeLog("result PopupStateFor instance=" + safeInstanceId + " state=" + safeState);
+				return safeState;
 			}
 			finally
 			{
@@ -634,6 +696,7 @@ namespace BG_Library.NET.IOSSDK
 					AdsMultiplatform_FreeCString(statePtr);
 			}
 #else
+			BridgeUnavailable("PopupStateFor", safeInstanceId);
 			return "NotLoaded";
 #endif
 		}
@@ -641,7 +704,7 @@ namespace BG_Library.NET.IOSSDK
 		public static void NotifyPopupShowSkipped(string instanceId, string reason)
 		{
 			string safeInstanceId = SafeAlias(instanceId, DefaultPopupInstanceId);
-			UnityEngine.Debug.LogWarning("[IOSNativeAdBridge] ShowPopup skipped. instance=" + safeInstanceId + " " + reason);
+			BridgeWarn("skip ShowPopup instance=" + safeInstanceId + " " + reason);
 			DispatchSyntheticEvent(safeInstanceId, IOSNativeAdCallbackNames.OnClosed);
 		}
 
@@ -650,15 +713,16 @@ namespace BG_Library.NET.IOSSDK
 			int separator = string.IsNullOrEmpty(payload) ? -1 : payload.IndexOf('|');
 			if (separator <= 0 || separator >= payload.Length - 1)
 			{
-				UnityEngine.Debug.LogWarning("[IOSNativeAdCallbackReceiver] Invalid callback payload: " + payload);
+				BridgeWarn("invalid callback payload=" + payload);
 				return;
 			}
 
 			string instanceId = SafeInstanceId(payload.Substring(0, separator));
 			string stateName = payload.Substring(separator + 1);
+			BridgeLog("callback native->unity instance=" + instanceId + " state=" + stateName);
 			if (!Instances.TryGetValue(instanceId, out var target))
 			{
-				UnityEngine.Debug.LogWarning("[IOSNativeAdCallbackReceiver] No registered native ad for callback: " + instanceId);
+				BridgeWarn("callback has no registered target instance=" + instanceId + " state=" + stateName);
 				return;
 			}
 
@@ -767,6 +831,42 @@ namespace BG_Library.NET.IOSSDK
 		}
 
 		private static int NonNegative(int value) => value < 0 ? 0 : value;
+
+		private static void BridgeLog(string message)
+		{
+			UnityEngine.Debug.Log(LogTag + " " + message);
+		}
+
+		private static void BridgeWarn(string message)
+		{
+			UnityEngine.Debug.LogWarning(LogTag + " " + message);
+		}
+
+		private static void BridgeUnavailable(string apiName, string instanceId)
+		{
+			BridgeLog("skip " + apiName + " instance=" + instanceId + " reason=not_ios_player_build");
+		}
+
+		private static void BridgeLogResult(string apiName, string instanceId, bool result)
+		{
+			BridgeLog("result " + apiName + " instance=" + instanceId + " success=" + result);
+		}
+
+		private static int CsvCount(string csv)
+		{
+			if (string.IsNullOrWhiteSpace(csv))
+				return 0;
+
+			int count = 0;
+			string[] parts = csv.Split(',');
+			for (int i = 0; i < parts.Length; i++)
+			{
+				if (!string.IsNullOrWhiteSpace(parts[i]))
+					count++;
+			}
+
+			return count;
+		}
 
 		private static string JoinAdUnitIds(string[] adUnitIds)
 		{
